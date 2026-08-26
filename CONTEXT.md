@@ -2,6 +2,30 @@
 
 Nightingale Care Note is a clinic-scoped longitudinal collaboration layer that complements an EHR. It helps care teams identify, verify, and act on the most relevant patient context without replacing clinical judgment.
 
+**Pilot**:
+A single-clinic, clinician-led validation of a defined care workflow using synthetic or de-identified data. A Pilot is not a production multi-clinic service and does not authorize unrestricted PHI processing.
+_Avoid_: demo, production launch, proof of concept
+
+**Pilot Runtime**:
+The separately deployed, security-governed implementation used for a Pilot. It may reuse validated product behavior from the Demo but does not inherit its development authentication or local storage model.
+_Avoid_: upgraded demo, production mode
+
+**System of Record**:
+The EHR that remains authoritative for formal clinical documentation, orders, and billing. Nightingale supplements it with collaboration and longitudinal context.
+_Avoid_: source of truth for orders, replacement EHR
+
+**Clinic Membership**:
+The verified relationship between an authenticated user and a clinic that determines which Pilot records the user may read or mutate.
+_Avoid_: selected clinic, client-side tenant
+
+**FHIR Snapshot**:
+A read-only, time-stamped import of EHR data using a standard FHIR representation. It is an external input to a Care Note and does not grant Nightingale authority to write back to the EHR.
+_Avoid_: EHR mirror, editable EHR record
+
+**Sync Status**:
+The explicit freshness and failure state of an external FHIR import, including last successful synchronization time and affected scope. It prevents old external data from being implied to be current.
+_Avoid_: current data, silent fallback
+
 ## Record
 
 **Care Note**:
@@ -25,6 +49,14 @@ _Avoid_: patient note, public timeline
 **Evidence Claim**:
 A minimal factual extraction linked to an exact source entry version and text span. It may support a summary, Highlight, or rule evaluation only while that source link resolves.
 _Avoid_: AI fact, inferred fact, paraphrase
+
+**AI Intake Pipeline**:
+The auditable sequence that redacts a sourced interaction, validates extracted Evidence Claims against a schema, applies deterministic rules, and produces reviewable Highlights.
+_Avoid_: free-form AI summary, autonomous clinical reasoning
+
+**Evidence Workbench**:
+The clinician review surface that presents a Claim's source span, extracted entities, rule and configuration version, evidence state, and recorded review decision in one place.
+_Avoid_: AI card, summary viewer
 
 **Superseded Source**:
 The state of an Evidence Claim whose source Entry has a newer version. The claim remains linked to its immutable original version and remains inspectable.
@@ -76,13 +108,37 @@ _Avoid_: overwritten memory, corrected source
 A cancellable, auditable request for a care-team member to review a Risk Flag or follow-up item. A rule-created Review Task begins unassigned and may be claimed by an authorized team member.
 _Avoid_: alert, escalation
 
+**Triage Owner**:
+The clinic-designated role responsible for claiming and escalating review-required Risk Flags within the agreed service level. The Triage Owner does not turn a signal into a diagnosis.
+_Avoid_: alert recipient, automated resolver
+
+**Care Review Loop**:
+The accountable Pilot workflow from sourced intake through triage claim, staff follow-up, clinician confirmation or override, and auditable task closure.
+_Avoid_: notification flow, free-form collaboration
+
 **Patient Insight**:
 A patient-submitted Timeline Entry, visible to the clinic team and governed separately from patient-facing summaries. A patient may submit an insight but cannot access internal material.
 _Avoid_: patient note, patient message
 
+**Sandbox Patient View**:
+A non-production patient-facing experience used only with synthetic or de-identified data during the Pilot. It must not authenticate or collect information from real patients.
+_Avoid_: patient portal, Pilot user
+
 **Demo Session**:
-A server-signed authenticated session for one of four seeded roles: patient, staff, clinician, or admin. Changing demo identity creates a new session rather than changing a client-side role value.
-_Avoid_: role switcher, mock identity
+A development-only role switch using a seeded user cookie. It is not an authenticated or signed session and must not be used in a Pilot.
+_Avoid_: authenticated session, secure identity
+
+**Authenticated Session**:
+A managed-identity-backed session whose user, clinic membership, and role are verified server-side. It is the only session type permitted in a Pilot.
+_Avoid_: demo session, client-selected role
+
+**Collaboration Event**:
+An immutable, versioned notification of a Care Note change delivered to authorized clinic members. It refreshes a viewer's current state but does not merge simultaneous edits to the same section.
+_Avoid_: live co-editing, CRDT operation
+
+**Outbox Event**:
+A transactionally recorded Collaboration Event that is delivered to authorized subscribers after the Care Note change commits. It supports retry without making the browser the event source.
+_Avoid_: database trigger broadcast, client polling
 
 **Risk Dismissal Reason**:
 A required structured explanation for dismissing a Risk Flag: not clinically relevant, source outdated, or rule false positive.
@@ -107,3 +163,43 @@ _Avoid_: fixture-only test, duplicate business logic
 **Warm-path Benchmark**:
 A measurement of the already-loaded Glance View API across at least 100 requests against one patient with 1,000 Timeline Entries, 20 active Highlights, and 10 open tasks. Its target is P95 at or below 300ms.
 _Avoid_: empty-state benchmark, first-load timing
+
+**Pilot Gate**:
+The mandatory release checklist for a Pilot: real authentication, tenant-isolation attack tests, atomic version writes, audit export, redaction regression tests, and a reviewed threat model.
+_Avoid_: launch checklist, optional hardening
+
+**Stage Gate**:
+The non-skippable acceptance criteria between Foundation, Workflow, Intelligence, and Pilot Operations. A later stage cannot compensate for an earlier stage that has not met its safety criteria.
+_Avoid_: roadmap milestone, feature list
+
+**Accountable Owner**:
+A named person with authority for one Pilot responsibility: clinical behavior, privacy/security, or product/operations. Accountability may not be assigned to an unspecified team.
+_Avoid_: stakeholder, team owner
+
+**Failure-Safe Mode**:
+The explicit state entered when an external dependency fails. It displays data freshness and scope, preserves read-only history, and prevents new AI output or silent use of stale external data.
+_Avoid_: graceful degradation, fallback mode
+
+**Import Revocation**:
+The recorded withdrawal of an imported data set's processing authorization. It stops future processing and applies the configured deletion policy to removable copies while retaining the minimum necessary audit evidence.
+_Avoid_: hard delete, erased audit
+
+**Retention Policy**:
+A clinic-configured and auditable rule for retaining, expiring, or deleting a data class. Care Note content, immutable audit records, and operational data may have different policies.
+_Avoid_: hard-coded retention period, one-size-fits-all deletion
+
+**Governed Clinical Configuration**:
+A versioned, reviewable, and reversible configuration for risk rules, redaction rules, or extraction prompts. Each change requires clinician-owner and product-owner approval plus regression validation.
+_Avoid_: prompt edit, hidden rule change
+
+**Quality Review**:
+The clinic-lead review of AI decisions, risk-task SLA, configuration versions, clinician overrides, and provenance outcomes. It is an operational feedback process, not model self-evaluation.
+_Avoid_: analytics dashboard, confidence report
+
+**Environment**:
+An isolated deployment stage with a defined data class and access policy: development uses synthetic data, staging uses de-identified regression samples, and Pilot uses controlled Pilot data.
+_Avoid_: deployment branch, shared database
+
+**Pilot Success Metric**:
+A pre-defined operational or trust measure used to decide whether to expand the Pilot, such as consult-preparation time, task SLA, clinician-confirmed Highlight precision, reject reasons, or source-resolution rate.
+_Avoid_: page views, model calls
