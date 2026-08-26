@@ -1,0 +1,11 @@
+Nightingale Care Note attribution
+
+Next.js — MIT — https://github.com/vercel/next.js
+React — MIT — https://github.com/facebook/react
+Drizzle ORM — Apache-2.0 — https://github.com/drizzle-team/drizzle-orm
+better-sqlite3 — MIT — https://github.com/WiseLibs/better-sqlite3
+Zod — MIT — https://github.com/colinhacks/zod
+TypeScript — Apache-2.0 — https://github.com/microsoft/TypeScript
+pytest — MIT — https://github.com/pytest-dev/pytest
+
+All patient, clinician, and AI-scribed content in this repository is synthetic.

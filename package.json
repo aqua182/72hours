@@ -1,0 +1,31 @@
+{
+  "name": "nightingale-care-note",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:seed": "tsx src/server/seed.ts",
+    "test:micro": ".venv/bin/python -m pytest tests -q",
+    "benchmark": "tsx scripts/benchmark-glance.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "latest",
+    "drizzle-orm": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "drizzle-kit": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
