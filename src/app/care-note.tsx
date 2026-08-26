@@ -18,7 +18,7 @@ export default function CareNote() {
   useEffect(() => { login("clinician"); }, []);
   const internal = data?.user?.role !== "patient";
   const act = async (id: string, action: string) => { await fetch(`/api/highlights/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, dismissReason: action === "dismissed" ? "not clinically relevant" : undefined }) }); setNotice(`Highlight ${action}. Evidence state and audit trail updated.`); await login(role); };
-  const claim = async (id: string) => { await fetch(`/api/tasks/${id}/claim`, { method: "POST" }); setNotice("Review task claimed."); await login(role); };
+  const claim = async (id: string) => { const response = await fetch(`/api/tasks/${id}/claim`, { method: "POST" }); const result = await response.json(); setNotice(result.claimed ? "Review task claimed and assigned to you." : "This review task is already assigned."); await login(role); };
   const visibleHighlights = useMemo(() => (data?.highlights ?? []).slice(0, 3), [data]);
   if (loading || !data) return <main className="loading">Loading trusted care context…</main>;
   return <main>
@@ -35,9 +35,9 @@ export default function CareNote() {
       <section className="glance">
         <div className="section-heading"><div><p className="eyebrow">10-SECOND CONSULT VIEW</p><h2>What needs attention now</h2></div><span className="trust-chip">Every card links to source</span></div>
         <div className="highlight-grid">{visibleHighlights.map((h: any, i: number) => <article key={h.id} className={`highlight h${i}`}>
-          <div className="card-top"><span className="signal">{i === 0 ? "REVIEW REQUIRED" : "RECENT CHANGE"}</span><span className="score">Why shown</span></div>
+          <div className="card-top"><span className="signal">{h.status === "accepted" ? "CLINICIAN CONFIRMED" : i === 0 ? "REVIEW REQUIRED" : "RECENT CHANGE"}</span><span className="score">Why shown</span></div>
           <h3>{h.title}</h3><p>{h.riskReason}</p><div className="source-line">◉ Source-linked · {h.evidenceState.replace("-", " ")}</div>
-          <div className="actions"><button className="link" onClick={() => document.getElementById(h.entryId)?.scrollIntoView({ behavior: "smooth", block: "center" })}>View source ↗</button>{data.user.role === "clinician" && <button className="solid" onClick={() => act(h.id, "accepted")}>Accept</button>}</div>
+          <div className="actions"><button className="link" onClick={() => document.getElementById(h.entryId)?.scrollIntoView({ behavior: "smooth", block: "center" })}>View source ↗</button>{h.status === "accepted" ? <span className="confirmed">✓ Confirmed</span> : data.user.role === "clinician" && <button className="solid" onClick={() => act(h.id, "accepted")}>Accept</button>}</div>
         </article>)}</div>
       </section>
       <section className="two-col">

@@ -7,11 +7,17 @@ import urllib.request
 
 import pytest
 
-BASE = "http://127.0.0.1:3010"
+BASE = "http://127.0.0.1:3000"
 
 @pytest.fixture(scope="session", autouse=True)
 def app_server():
-    process = subprocess.Popen(["npm", "run", "dev", "--", "--port", "3010"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        urllib.request.urlopen(f"{BASE}/", timeout=1)
+        yield
+        return
+    except (urllib.error.URLError, TimeoutError, OSError):
+        pass
+    process = subprocess.Popen(["npm", "run", "dev", "--", "--port", "3000"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
         try:
             urllib.request.urlopen(f"{BASE}/", timeout=1)
