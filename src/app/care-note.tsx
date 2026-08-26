@@ -19,12 +19,13 @@ export default function CareNote() {
   const internal = data?.user?.role !== "patient";
   const act = async (id: string, action: string) => { await fetch(`/api/highlights/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, dismissReason: action === "dismissed" ? "not clinically relevant" : undefined }) }); setNotice(`Highlight ${action}. Evidence state and audit trail updated.`); await login(role); };
   const claim = async (id: string) => { const response = await fetch(`/api/tasks/${id}/claim`, { method: "POST" }); const result = await response.json(); setNotice(result.claimed ? "Review task claimed and assigned to you." : "This review task is already assigned."); await login(role); };
+  const resetDemo = async () => { await fetch("/api/demo/reset", { method: "POST" }); setNotice("Synthetic demo reset: Highlights and tasks are ready to demonstrate again."); await login(role); };
   const visibleHighlights = useMemo(() => (data?.highlights ?? []).slice(0, 3), [data]);
   if (loading || !data) return <main className="loading">Loading trusted care context…</main>;
   return <main>
     <header className="topbar">
       <div><span className="brand-mark">N</span><strong>Nightingale</strong><span className="muted">Care Note / Synthetic demo</span></div>
-      <label>Demo identity <select value={role} onChange={(e) => login(e.target.value)}>{Object.keys(roleLabel).map((key) => <option key={key} value={key}>{roleLabel[key]}</option>)}</select></label>
+      <div className="session-controls">{data?.user?.role === "admin" && <button className="reset" onClick={resetDemo}>Reset demo state</button>}<label>Demo identity <select value={role} onChange={(e) => login(e.target.value)}>{Object.keys(roleLabel).map((key) => <option key={key} value={key}>{roleLabel[key]}</option>)}</select></label></div>
     </header>
     <section className="patient-header">
       <div><p className="eyebrow">CLINIC-SCOPED RECORD · {roleLabel[data.user.role].toUpperCase()}</p><h1>{data.patient.displayName}</h1><p>DOB {data.patient.dob} · One shared, source-linked longitudinal record</p></div>

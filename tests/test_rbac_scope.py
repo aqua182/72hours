@@ -15,3 +15,9 @@ def test_task_assignment_is_returned_to_the_client_in_ui_shape(client):
     status, payload = client("clinician").get("/api/patients/patient-ava")
     assert status == 200
     assert all("assigneeId" in task and "dueAt" in task for task in payload["tasks"])
+
+def test_only_admin_can_reset_the_synthetic_demo(client):
+    status, _ = client("clinician").post("/api/demo/reset", {})
+    assert status == 403
+    status, _ = client("admin").post("/api/demo/reset", {})
+    assert status == 200
