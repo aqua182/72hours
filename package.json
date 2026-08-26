@@ -14,7 +14,9 @@
   "dependencies": {
     "better-sqlite3": "latest",
     "drizzle-orm": "latest",
+    "jose": "^6.2.10",
     "next": "latest",
+    "pg": "^8.23.0",
     "react": "latest",
     "react-dom": "latest",
     "zod": "latest"
@@ -22,6 +24,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "latest",
     "@types/node": "latest",
+    "@types/pg": "^8.23.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "drizzle-kit": "latest",
