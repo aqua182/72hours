@@ -6,6 +6,8 @@ deployment authorized for unrestricted patient data.
 
 ## Before recording
 
+For a local screen-only capture, open `http://localhost:3001/demo-recorder.html`, choose the Nightingale browser tab, and then return to the Pilot tab. It explicitly requests no microphone audio and downloads the WebM recording only to the local machine.
+
 1. Confirm Docker Desktop is running, then run `npm run pilot:dev` from the
    repository root.
 2. Open `http://localhost:3001` and sign in with the approved Auth0 test user.
