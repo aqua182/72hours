@@ -6,6 +6,7 @@ import { appendCareEntryVersion, createCareEntry } from "../src/db/care-entry-re
 import { withPilotActor } from "../src/db/actor-transaction";
 import { claimReviewTask, closeReviewTask } from "../src/db/review-task-repository";
 import { getEvidenceWorkbench, reviewHighlight } from "../src/db/evidence-workbench-repository";
+import { getCareNote } from "../src/db/care-note-read-repository";
 
 function localEnvironment() {
   const values: Record<string, string> = {};
@@ -182,7 +183,18 @@ async function main() {
     const dismissed = await testAdmin.query("SELECT h.status, h.dismissal_reason, c.evidence_state FROM highlights h JOIN evidence_claims c ON c.id = h.claim_id WHERE h.id = $1", [dismissedHighlightId]);
     assert.deepEqual(dismissed.rows, [{ status: "dismissed", dismissal_reason: "source_outdated", evidence_state: "source-linked" }]);
 
-    console.log("PASS: authenticated care-entry, Review Task, and Evidence Workbench workflows preserve provenance, clinic isolation, audit, and outbox events.");
+    await testAdmin.query("INSERT INTO care_tasks (id, clinic_id, patient_id, source_id, title, status, review_required) VALUES ($1, $2, $3, $4, 'Synthetic open follow-up', 'open', false)", [randomUUID(), fixture.clinicId, fixture.patientId, randomUUID()]);
+    const careNote = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => getCareNote(client, actor, fixture.patientId));
+    assert.equal(careNote.patient.displayLabel, "Synthetic entry patient");
+    assert.deepEqual(careNote.entries.map((entry) => entry.content), ["Synthetic revised clinician entry"]);
+    assert.deepEqual(careNote.highlights.map((highlight) => highlight.status).sort(), ["accepted", "dismissed"]);
+    assert.deepEqual(careNote.openTasks.map((task) => task.title), ["Synthetic open follow-up"]);
+    await assert.rejects(
+      () => withPilotActor(testWeb!, identity, fixture.clinicId, (client, actor) => getCareNote(client, actor, fixture.otherPatientId)),
+      (error: unknown) => error instanceof Error && error.message.includes("patient not found"),
+    );
+
+    console.log("PASS: authenticated Care Note workflows preserve current versions, provenance, clinic isolation, audit, and outbox events.");
   } finally {
     await testWeb?.end();
     await testAdmin?.end();

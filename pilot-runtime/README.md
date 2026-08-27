@@ -16,6 +16,8 @@ Review Tasks remain clinic-scoped: `PATCH /api/review-tasks/:taskId/claim` lets 
 
 The Evidence Workbench is source-linked: `GET /api/highlights/:highlightId?clinicId=:clinicId` returns the Claim, exact source span, configuration versions, and current Evidence State. `PATCH /api/highlights/:highlightId` allows a clinician to accept, reject, pin, or dismiss a Highlight; only acceptance marks the linked Claim `clinician-confirmed`. Dismissal requires one structured reason: `not_clinically_relevant`, `source_outdated`, or `rule_false_positive`.
 
+`GET /api/patients/:patientId/care-note?clinicId=:clinicId` returns the clinic-scoped Care Note read model: current Timeline Entry versions, source-linked Highlights, and open or claimed tasks. It never falls back to another Clinic's patient record.
+
 ## Governed AI Intake foundation
 
 The Pilot has a server-side redaction utility, strict extraction schema validation, and deterministic risk rules for allergy-medication conflicts, breathing difficulty, and overdue renal follow-up. These rules create reviewable signals from validated Claims; they do not use a model risk score or self-reported confidence. Run `npm run test:pilot-rules` to verify the deterministic contract. A model adapter and worker persistence path remain intentionally unconfigured until a provider, data-processing agreement, and redaction regression corpus are approved.
