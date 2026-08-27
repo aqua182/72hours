@@ -18,6 +18,14 @@ bash pilot-runtime/scripts/setup-postgres.sh
 
 The web service then uses `PILOT_DATABASE_URL` for the restricted `nightingale_web` role. Neither URL is provided in source control. The wizard creates the required `pilot-runtime/.env`. Local database credentials are for synthetic or de-identified development data only.
 
+Verify clinic isolation after the local database is ready:
+
+```bash
+npm run test:pilot-isolation
+```
+
+The test creates two synthetic clinics, verifies cross-clinic reads and writes are denied, confirms Timeline Entry versions cannot be mutated directly, and removes its fixtures before it exits.
+
 ## Before any Pilot data
 
 1. Connect a managed identity provider and verify JWT issuer, audience, expiration, and subject.
