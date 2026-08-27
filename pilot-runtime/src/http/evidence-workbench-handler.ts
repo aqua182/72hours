@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { verifyOidcBearer, type VerifiedIdentity } from "../auth/verified-identity";
+import { type VerifiedIdentity } from "../auth/verified-identity";
+import { verifyPilotRequest } from "../auth/verified-pilot-request";
 import { createPilotPool, withPilotActor } from "../db/actor-transaction";
 import { getEvidenceWorkbench, reviewHighlight, type DismissalReason, type HighlightDecision } from "../db/evidence-workbench-repository";
 
@@ -11,7 +12,7 @@ const reviewRequest = z.object({
 });
 
 type Dependencies = {
-  verifyIdentity: (authorization: string | null) => Promise<VerifiedIdentity>;
+  verifyIdentity: (request: Request) => Promise<VerifiedIdentity>;
   runAsActor: typeof withPilotActor;
   pool: ReturnType<typeof createPilotPool>;
 };
@@ -21,14 +22,14 @@ let applicationPool: ReturnType<typeof createPilotPool> | undefined;
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("highlight not found")) return Response.json({ error: "NOT_FOUND" }, { status: 404 });
-  if (message.includes("only a clinician")) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (message.includes("only a clinician") || message.includes("forbidden clinic membership") || message.includes("authenticated subject is not provisioned")) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
   if (message.includes("dismissal reason") || message.includes("invalid highlight decision")) return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
   return Response.json({ error: "REQUEST_FAILED" }, { status: 500 });
 }
 
 async function identityFor(request: Request, dependencies: Dependencies) {
   try {
-    return await dependencies.verifyIdentity(request.headers.get("authorization"));
+    return await dependencies.verifyIdentity(request);
   } catch {
     return undefined;
   }
@@ -69,9 +70,9 @@ function pool() {
 }
 
 export async function handleGetEvidenceWorkbench(request: Request, highlightId: string) {
-  return createEvidenceWorkbenchHandler({ pool: pool(), runAsActor: withPilotActor, verifyIdentity: verifyOidcBearer }).get(request, highlightId);
+  return createEvidenceWorkbenchHandler({ pool: pool(), runAsActor: withPilotActor, verifyIdentity: verifyPilotRequest }).get(request, highlightId);
 }
 
 export async function handleReviewHighlight(request: Request, highlightId: string) {
-  return createEvidenceWorkbenchHandler({ pool: pool(), runAsActor: withPilotActor, verifyIdentity: verifyOidcBearer }).patch(request, highlightId);
+  return createEvidenceWorkbenchHandler({ pool: pool(), runAsActor: withPilotActor, verifyIdentity: verifyPilotRequest }).patch(request, highlightId);
 }

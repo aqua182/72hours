@@ -10,6 +10,31 @@ Start the independently routed Pilot service on port 3001:
 npm run pilot:dev
 ```
 
+Open `http://localhost:3001` to use the real Auth0 browser login. The Pilot
+uses Auth0's server-side session to obtain an API access token, validates that
+token's issuer, audience, signature, and subject, and only then opens an
+RLS-scoped database transaction. A successful login does not grant patient
+access: a Pilot administrator must separately create the user's active Clinic
+Membership. `/auth/login`, `/auth/logout`, and `/auth/callback` are mounted by
+the Pilot's Next.js Proxy; this service never uses the synthetic Demo role
+switcher.
+
+After you create the Auth0 Regular Web Application and API, run:
+
+```bash
+bash pilot-runtime/scripts/setup-auth0.sh
+```
+
+The wizard stores the Auth0 Domain, API Identifier, and client/session secrets
+only in the ignored `pilot-runtime/.env` file. Do not copy its secrets into
+source control or chat. It always switches to the Pilot directory first, so it
+is safe to run from the repository root. Verify session-to-token authorization
+behavior with:
+
+```bash
+npm run test:pilot-auth
+```
+
 `GET /api/health` confirms the service is running. `POST /api/care-entries` requires a verified OIDC bearer token and accepts only `clinicId`, `patientId`, `type` (`staff_note` or `clinician_note`), and `content`. `PATCH /api/care-entries/:entryId` requires `clinicId`, `expectedVersion`, and `content`; a stale version returns `409 VERSION_CONFLICT`.
 
 Review Tasks remain clinic-scoped: `PATCH /api/review-tasks/:taskId/claim` lets an authenticated clinic member claim an open task. `PATCH /api/review-tasks/:taskId/close` requires a clinician and one structured closure reason: `clinician_confirmed`, `clinician_rejected`, `not_clinically_relevant`, `source_outdated`, or `rule_false_positive`. The service is deliberately separate from the synthetic Demo on port 3000.

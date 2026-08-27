@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { verifyOidcBearer, type VerifiedIdentity } from "../auth/verified-identity";
+import { type VerifiedIdentity } from "../auth/verified-identity";
+import { verifyPilotRequest } from "../auth/verified-pilot-request";
 import { createPilotPool, withPilotActor } from "../db/actor-transaction";
 import { getCareNote } from "../db/care-note-read-repository";
 
 type Dependencies = {
-  verifyIdentity: (authorization: string | null) => Promise<VerifiedIdentity>;
+  verifyIdentity: (request: Request) => Promise<VerifiedIdentity>;
   runAsActor: typeof withPilotActor;
   pool: ReturnType<typeof createPilotPool>;
 };
@@ -17,7 +18,7 @@ export function createCareNoteReadHandler(dependencies: Dependencies) {
     if (!clinicId.success) return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
     let identity: VerifiedIdentity;
     try {
-      identity = await dependencies.verifyIdentity(request.headers.get("authorization"));
+      identity = await dependencies.verifyIdentity(request);
     } catch {
       return Response.json({ error: "UNAUTHENTICATED" }, { status: 401 });
     }
@@ -26,6 +27,7 @@ export function createCareNoteReadHandler(dependencies: Dependencies) {
       return Response.json(careNote);
     } catch (error) {
       if (error instanceof Error && error.message.includes("patient not found")) return Response.json({ error: "NOT_FOUND" }, { status: 404 });
+      if (error instanceof Error && (error.message.includes("forbidden clinic membership") || error.message.includes("authenticated subject is not provisioned"))) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
       return Response.json({ error: "REQUEST_FAILED" }, { status: 500 });
     }
   };
@@ -33,5 +35,5 @@ export function createCareNoteReadHandler(dependencies: Dependencies) {
 
 export async function handleGetCareNote(request: Request, patientId: string) {
   applicationPool ??= createPilotPool();
-  return createCareNoteReadHandler({ pool: applicationPool, runAsActor: withPilotActor, verifyIdentity: verifyOidcBearer })(request, patientId);
+  return createCareNoteReadHandler({ pool: applicationPool, runAsActor: withPilotActor, verifyIdentity: verifyPilotRequest })(request, patientId);
 }

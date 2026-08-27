@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { verifyOidcBearer, type VerifiedIdentity } from "../auth/verified-identity";
+import { type VerifiedIdentity } from "../auth/verified-identity";
+import { verifyPilotRequest } from "../auth/verified-pilot-request";
 import { createPilotPool, withPilotActor } from "../db/actor-transaction";
 import { claimReviewTask, closeReviewTask, type ReviewTaskClosureReason } from "../db/review-task-repository";
 
@@ -10,7 +11,7 @@ const closeRequest = z.object({
 });
 
 type Dependencies = {
-  verifyIdentity: (authorization: string | null) => Promise<VerifiedIdentity>;
+  verifyIdentity: (request: Request) => Promise<VerifiedIdentity>;
   runAsActor: typeof withPilotActor;
   pool: ReturnType<typeof createPilotPool>;
 };
@@ -20,7 +21,7 @@ let applicationPool: ReturnType<typeof createPilotPool> | undefined;
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("task not found")) return Response.json({ error: "NOT_FOUND" }, { status: 404 });
-  if (message.includes("only a clinician") || message.includes("not a review-required")) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (message.includes("only a clinician") || message.includes("not a review-required") || message.includes("forbidden clinic membership") || message.includes("authenticated subject is not provisioned")) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
   if (message.includes("not open") || message.includes("must be claimed")) return Response.json({ error: "TASK_STATE_CONFLICT" }, { status: 409 });
   if (message.includes("closure reason")) return Response.json({ error: "INVALID_REQUEST" }, { status: 400 });
   return Response.json({ error: "REQUEST_FAILED" }, { status: 500 });
@@ -28,7 +29,7 @@ function errorResponse(error: unknown) {
 
 async function verifiedIdentity(request: Request, dependencies: Dependencies) {
   try {
-    return await dependencies.verifyIdentity(request.headers.get("authorization"));
+    return await dependencies.verifyIdentity(request);
   } catch {
     return undefined;
   }
@@ -70,9 +71,9 @@ function pool() {
 }
 
 export async function handleClaimReviewTask(request: Request, taskId: string) {
-  return createClaimReviewTaskHandler({ pool: pool(), runAsActor: withPilotActor, verifyIdentity: verifyOidcBearer })(request, taskId);
+  return createClaimReviewTaskHandler({ pool: pool(), runAsActor: withPilotActor, verifyIdentity: verifyPilotRequest })(request, taskId);
 }
 
 export async function handleCloseReviewTask(request: Request, taskId: string) {
-  return createCloseReviewTaskHandler({ pool: pool(), runAsActor: withPilotActor, verifyIdentity: verifyOidcBearer })(request, taskId);
+  return createCloseReviewTaskHandler({ pool: pool(), runAsActor: withPilotActor, verifyIdentity: verifyPilotRequest })(request, taskId);
 }
