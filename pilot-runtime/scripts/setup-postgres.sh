@@ -188,6 +188,16 @@ TOTAL_STAGES=5
 ENV_FILE="${PILOT_ENV_FILE:-pilot-runtime/.env}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f pilot-runtime/docker-compose.yml)
 
+apply_migration_if_missing() {
+  local label="$1" probe="$2" file="$3" present
+  present=$("${COMPOSE[@]}" exec -T postgres psql -U nightingale -d nightingale_pilot -tAc "$probe" | tr -d '[:space:]')
+  if [[ "$present" == "t" ]]; then
+    say "$label is already installed."
+  else
+    "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U nightingale -d nightingale_pilot < "$file"
+  fi
+}
+
 banner "Nightingale local Pilot Postgres"
 
 stage "Confirm Docker Desktop"
@@ -241,11 +251,12 @@ if [[ "$postgres_ready" != true ]]; then
 fi
 say "Postgres is accepting local connections."
 
-stage "Create restricted roles and apply the Foundation migration"
+stage "Create restricted roles and apply Pilot migrations"
 step "The administrator creates the owner, web, and worker roles; the wizard then sets the web password without printing it."
 "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U nightingale -d nightingale_pilot < pilot-runtime/db/migrations/0000_security_roles.sql
 printf "ALTER ROLE nightingale_web PASSWORD '%s';\n" "$PILOT_WEB_DB_PASSWORD" | "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U nightingale -d nightingale_pilot
-"${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U nightingale -d nightingale_pilot < pilot-runtime/db/migrations/0001_foundation.sql
+apply_migration_if_missing "Foundation migration" "SELECT to_regprocedure('append_entry_version(uuid,integer,text)') IS NOT NULL" pilot-runtime/db/migrations/0001_foundation.sql
+apply_migration_if_missing "Care Entry workflow migration" "SELECT to_regprocedure('create_care_entry(uuid,entry_type,entry_visibility,text,text)') IS NOT NULL" pilot-runtime/db/migrations/0002_care_entry_creation.sql
 
 stage "Verify the Foundation boundary"
 "${COMPOSE[@]}" exec -T postgres psql -U nightingale -d nightingale_pilot -c "SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname IN ('nightingale_web', 'nightingale_worker') ORDER BY rolname;"

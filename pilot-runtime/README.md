@@ -26,6 +26,14 @@ npm run test:pilot-isolation
 
 The test creates two synthetic clinics, verifies cross-clinic reads and writes are denied, confirms Timeline Entry versions cannot be mutated directly, and removes its fixtures before it exits.
 
+Verify the first authenticated Care Note mutation in an isolated temporary database:
+
+```bash
+npm run test:pilot-workflow
+```
+
+It verifies a clinician can create an internal Timeline Entry only for a patient in their Clinic, and that its initial immutable version, audit event, and Outbox Event commit together.
+
 ## Before any Pilot data
 
 1. Connect a managed identity provider and verify JWT issuer, audience, expiration, and subject.
