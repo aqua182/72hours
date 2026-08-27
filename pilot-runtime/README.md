@@ -10,7 +10,9 @@ Start the independently routed Pilot service on port 3001:
 npm run pilot:dev
 ```
 
-`GET /api/health` confirms the service is running. `POST /api/care-entries` requires a verified OIDC bearer token and accepts only `clinicId`, `patientId`, `type` (`staff_note` or `clinician_note`), and `content`. `PATCH /api/care-entries/:entryId` requires `clinicId`, `expectedVersion`, and `content`; a stale version returns `409 VERSION_CONFLICT`. The service is deliberately separate from the synthetic Demo on port 3000.
+`GET /api/health` confirms the service is running. `POST /api/care-entries` requires a verified OIDC bearer token and accepts only `clinicId`, `patientId`, `type` (`staff_note` or `clinician_note`), and `content`. `PATCH /api/care-entries/:entryId` requires `clinicId`, `expectedVersion`, and `content`; a stale version returns `409 VERSION_CONFLICT`.
+
+Review Tasks remain clinic-scoped: `PATCH /api/review-tasks/:taskId/claim` lets an authenticated clinic member claim an open task. `PATCH /api/review-tasks/:taskId/close` requires a clinician and one structured closure reason: `clinician_confirmed`, `clinician_rejected`, `not_clinically_relevant`, `source_outdated`, or `rule_false_positive`. The service is deliberately separate from the synthetic Demo on port 3000.
 
 ## Foundation contract
 

@@ -257,6 +257,7 @@ step "The administrator creates the owner, web, and worker roles; the wizard the
 printf "ALTER ROLE nightingale_web PASSWORD '%s';\n" "$PILOT_WEB_DB_PASSWORD" | "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U nightingale -d nightingale_pilot
 apply_migration_if_missing "Foundation migration" "SELECT to_regprocedure('append_entry_version(uuid,integer,text)') IS NOT NULL" pilot-runtime/db/migrations/0001_foundation.sql
 apply_migration_if_missing "Care Entry workflow migration" "SELECT to_regprocedure('create_care_entry(uuid,entry_type,entry_visibility,text,text)') IS NOT NULL" pilot-runtime/db/migrations/0002_care_entry_creation.sql
+apply_migration_if_missing "Review Task workflow migration" "SELECT to_regprocedure('claim_review_task(uuid)') IS NOT NULL AND to_regprocedure('close_review_task(uuid,text)') IS NOT NULL" pilot-runtime/db/migrations/0003_review_task_workflow.sql
 
 stage "Verify the Foundation boundary"
 "${COMPOSE[@]}" exec -T postgres psql -U nightingale -d nightingale_pilot -c "SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname IN ('nightingale_web', 'nightingale_worker') ORDER BY rolname;"

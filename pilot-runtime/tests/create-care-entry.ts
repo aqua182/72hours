@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
 import { appendCareEntryVersion, createCareEntry } from "../src/db/care-entry-repository";
 import { withPilotActor } from "../src/db/actor-transaction";
+import { claimReviewTask, closeReviewTask } from "../src/db/review-task-repository";
 
 function localEnvironment() {
   const values: Record<string, string> = {};
@@ -30,13 +31,16 @@ type Fixture = {
   otherClinicId: string;
   userId: string;
   otherUserId: string;
+  staffUserId: string;
   patientId: string;
   otherPatientId: string;
+  taskId: string;
   subject: string;
+  staffSubject: string;
 };
 
 async function applyMigrations(client: PoolClient, databaseName: string) {
-  for (const migration of ["0000_security_roles.sql", "0001_foundation.sql", "0002_care_entry_creation.sql"]) {
+  for (const migration of ["0000_security_roles.sql", "0001_foundation.sql", "0002_care_entry_creation.sql", "0003_review_task_workflow.sql"]) {
     await client.query(readFileSync(`pilot-runtime/db/migrations/${migration}`, "utf8"));
   }
   await client.query(`GRANT CONNECT ON DATABASE ${databaseName} TO nightingale_web`);
@@ -49,16 +53,20 @@ async function createFixture(client: PoolClient): Promise<Fixture> {
     otherClinicId: randomUUID(),
     userId: randomUUID(),
     otherUserId: randomUUID(),
+    staffUserId: randomUUID(),
     patientId: randomUUID(),
     otherPatientId: randomUUID(),
+    taskId: randomUUID(),
     subject: `pilot-entry-clinician-${suffix}`,
+    staffSubject: `pilot-entry-staff-${suffix}`,
   };
   await client.query("BEGIN");
   try {
     await client.query("INSERT INTO clinics (id, name) VALUES ($1, $2), ($3, $4)", [record.clinicId, `Entry test clinic ${suffix}`, record.otherClinicId, `Entry test other clinic ${suffix}`]);
-    await client.query("INSERT INTO users (id, external_subject, display_name) VALUES ($1, $2, 'Entry test clinician'), ($3, $4, 'Other test clinician')", [record.userId, record.subject, record.otherUserId, `pilot-entry-other-${suffix}`]);
-    await client.query("INSERT INTO clinic_memberships (clinic_id, user_id, role) VALUES ($1, $2, 'clinician'), ($3, $4, 'clinician')", [record.clinicId, record.userId, record.otherClinicId, record.otherUserId]);
+    await client.query("INSERT INTO users (id, external_subject, display_name) VALUES ($1, $2, 'Entry test clinician'), ($3, $4, 'Other test clinician'), ($5, $6, 'Entry test staff')", [record.userId, record.subject, record.otherUserId, `pilot-entry-other-${suffix}`, record.staffUserId, record.staffSubject]);
+    await client.query("INSERT INTO clinic_memberships (clinic_id, user_id, role) VALUES ($1, $2, 'clinician'), ($3, $4, 'clinician'), ($1, $5, 'staff')", [record.clinicId, record.userId, record.otherClinicId, record.otherUserId, record.staffUserId]);
     await client.query("INSERT INTO patients (id, clinic_id, external_reference, display_label) VALUES ($1, $2, $3, 'Synthetic entry patient'), ($4, $5, $6, 'Synthetic other patient')", [record.patientId, record.clinicId, `entry-patient-${suffix}`, record.otherPatientId, record.otherClinicId, `entry-other-patient-${suffix}`]);
+    await client.query("INSERT INTO care_tasks (id, clinic_id, patient_id, source_id, title, status, review_required) VALUES ($1, $2, $3, $4, 'Synthetic review task', 'open', true)", [record.taskId, record.clinicId, record.patientId, randomUUID()]);
     await client.query("COMMIT");
     return record;
   } catch (error) {
@@ -121,7 +129,25 @@ async function main() {
       (error: unknown) => error instanceof Error && error.message.includes("patient not found"),
     );
 
-    console.log("PASS: authenticated clinician creates and revises immutable versions with audit/outbox records; stale and cross-clinic writes are denied.");
+    const staffIdentity = { subject: fixture.staffSubject, issuer: "test", audience: "test" };
+    await withPilotActor(testWeb, staffIdentity, fixture.clinicId, (client, actor) => claimReviewTask(client, actor, fixture.taskId));
+    const claimedTask = await testAdmin.query("SELECT status, assignee_id FROM care_tasks WHERE id = $1", [fixture.taskId]);
+    assert.deepEqual(claimedTask.rows, [{ status: "claimed", assignee_id: fixture.staffUserId }]);
+
+    await assert.rejects(
+      () => withPilotActor(testWeb!, staffIdentity, fixture.clinicId, (client, actor) => closeReviewTask(client, actor, fixture.taskId, "clinician_confirmed")),
+      (error: unknown) => error instanceof Error && error.message.includes("only a clinician"),
+    );
+
+    await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => closeReviewTask(client, actor, fixture.taskId, "clinician_confirmed"));
+    const closedTask = await testAdmin.query("SELECT status, closure_reason FROM care_tasks WHERE id = $1", [fixture.taskId]);
+    assert.deepEqual(closedTask.rows, [{ status: "closed", closure_reason: "clinician_confirmed" }]);
+    const taskAudit = await testAdmin.query("SELECT action FROM audit_events WHERE target_id = $1 ORDER BY created_at", [fixture.taskId]);
+    assert.deepEqual(taskAudit.rows, [{ action: "review_task_claimed" }, { action: "review_task_closed" }]);
+    const taskOutbox = await testAdmin.query("SELECT id FROM outbox_events WHERE aggregate_id = $1", [fixture.taskId]);
+    assert.equal(taskOutbox.rowCount, 2, "task claim and closure must each enqueue a collaboration event");
+
+    console.log("PASS: authenticated care-entry and review-task workflows preserve versioning, clinic isolation, audit, and outbox events.");
   } finally {
     await testWeb?.end();
     await testAdmin?.end();
