@@ -1,11 +1,14 @@
 {
   "name": "nightingale-care-note",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "pilot:dev": "next dev pilot-runtime --port 3001",
+    "pilot:build": "next build pilot-runtime",
+    "pilot:start": "next start pilot-runtime --port 3001",
     "lint": "next lint",
     "db:seed": "tsx src/server/seed.ts",
     "test:micro": ".venv/bin/python -m pytest tests -q",

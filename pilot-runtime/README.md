@@ -2,6 +2,16 @@
 
 This directory is intentionally separate from the local synthetic Demo. It is the Foundation for a single-clinic Pilot and must not run against unrestricted PHI until the Pilot Gate is complete.
 
+## Pilot Web service
+
+Start the independently routed Pilot service on port 3001:
+
+```bash
+npm run pilot:dev
+```
+
+`GET /api/health` confirms the service is running. `POST /api/care-entries` requires a verified OIDC bearer token and accepts only `clinicId`, `patientId`, `type` (`staff_note` or `clinician_note`), and `content`. It is deliberately separate from the synthetic Demo on port 3000.
+
 ## Foundation contract
 
 - Managed identity verifies the subject before every database transaction.
