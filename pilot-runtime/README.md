@@ -63,11 +63,31 @@ Review Tasks remain clinic-scoped: `PATCH /api/review-tasks/:taskId/claim` lets 
 
 The Evidence Workbench is source-linked: `GET /api/highlights/:highlightId?clinicId=:clinicId` returns the Claim, exact source span, configuration versions, and current Evidence State. `PATCH /api/highlights/:highlightId` allows a clinician to accept, reject, pin, or dismiss a Highlight; only acceptance marks the linked Claim `clinician-confirmed`. Dismissal requires one structured reason: `not_clinically_relevant`, `source_outdated`, or `rule_false_positive`.
 
+### Collaboration and longitudinal review
+
+- `POST`/`GET /api/care-entries/:entryId/comments` creates or reads internal
+  threaded comments. `PATCH /api/comments/:commentId` resolves or reopens one.
+- `GET /api/care-entries/:entryId/versions` lists immutable snapshots.
+  `POST /api/care-entries/:entryId/revert` restores an historic snapshot only
+  by appending a new version and audit event.
+- `POST /api/ai-scribed-entries` accepts synthetic interaction text, redacts
+  direct identifiers before storage, and creates a distinct system-authored
+  doctor, nurse or AI-patient draft with an `ai-source:` provenance pointer.
+- `POST /api/patients/:patientId/patient-summary` lets a clinician publish a
+  plain-language summary. `GET /api/patient-summaries` is the separate patient
+  endpoint; it never returns raw AI entries, internal notes, comments, claims,
+  tasks or Highlights.
+
+The Glance page subscribes to a content-free Server-Sent Event signal and
+re-fetches its already-authorized read model when a Care Note changes; it also
+has an eight-second visible-tab fallback. The app supplies a standalone web
+manifest for the synthetic mobile demo, not an offline cache of patient data.
+
 `GET /api/patients/:patientId/care-note?clinicId=:clinicId` returns the clinic-scoped Care Note read model: current Timeline Entry versions, source-linked Highlights, and open or claimed tasks. It never falls back to another Clinic's patient record.
 
 ## Governed AI Intake foundation
 
-The Pilot has a server-side redaction utility, strict extraction schema validation, and deterministic risk rules for allergy-medication conflicts, breathing difficulty, and overdue renal follow-up. These rules create reviewable signals from validated Claims; they do not use a model risk score or self-reported confidence. Run `npm run test:pilot-rules` to verify the deterministic contract. A model adapter and worker persistence path remain intentionally unconfigured until a provider, data-processing agreement, and redaction regression corpus are approved.
+The Pilot has a server-side redaction utility, strict extraction schema validation, and deterministic risk rules for allergy-medication conflicts, breathing difficulty, and overdue renal follow-up. These rules create reviewable signals from validated Claims; they do not use a model risk score or self-reported confidence. Run `npm run test:pilot-rules` to verify the deterministic contract. The local submission mode creates clearly labelled AI-scribed drafts from redacted synthetic input and persists source linkage. It deliberately does not activate a third-party transcription or LLM provider without an approved processor, credentials, data-processing agreement and redaction regression corpus. Local voice capture is browser-only and synthetic; it is never uploaded or transcribed.
 
 ## Foundation contract
 
@@ -100,6 +120,17 @@ npm run test:pilot-workflow
 ```
 
 It verifies a clinician can create an internal Timeline Entry only for a patient in their Clinic, and that its initial immutable version, audit event, and Outbox Event commit together.
+
+Measure the indexed Consult Glance read model against an isolated fixture of
+1,000 Timeline Entries, 20 active Highlights and 10 open tasks:
+
+```bash
+npm run pilot:benchmark
+```
+
+The latest local result is P50 11.1 ms and P95 13.7 ms for 100 warm
+RLS-scoped read-model requests. It excludes Auth0 network exchange and browser
+rendering; see the technical brief for the exact method and scope.
 
 ## Before any Pilot data
 

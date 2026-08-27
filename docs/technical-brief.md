@@ -1,58 +1,123 @@
-# Nightingale Care Note
-## A trust-first longitudinal collaboration layer for clinic teams
+# Nightingale Care Note — Pilot technical brief
 
-### Problem and product thesis
+## Decision: a shared record, not an opaque AI layer
 
-EHRs store structured snapshots well, but the explanatory patient story is fragmented across free-text records. A clinician preparing for a consult has to reconstruct what changed, what is still open, and whether an AI or patient statement can be trusted. Nightingale Care Note is a clinic-scoped longitudinal layer—not a replacement EHR—that turns this into a shared, inspectable workflow.
-
-The product thesis is that AI earns trust through traceability and correction, not by presenting an unexplained confidence score. The default view is a compact Glance View of risks, changes, and open actions; the Timeline remains the source of truth.
+Nightingale is a clinic-scoped collaboration layer beside the EHR. Its job is
+to make the changing story, responsibility, and source of each signal visible
+in one consult-ready view. The EHR remains the system of record. The key design
+choice is that a Highlight is not a diagnosis, a risk score, or model
+confidence: it is a reviewable reading-order signal backed by an immutable
+source span and a stated deterministic reason.
 
 ```mermaid
 flowchart LR
-  I["Patient / staff / clinician interaction"] --> E["Versioned Timeline Entry"]
-  E --> R["Redaction + AI adapter"]
-  R --> C["Source-linked Evidence Claim"]
-  C --> H["Highlight or deterministic Risk Rule"]
-  H --> G["Glance View + Review Task"]
-  G -->|"View source"| E
-  U["Accept / reject / pin / dismiss"] --> H
+  I["Staff / clinician / patient interaction"] --> R["PHI redaction boundary"]
+  R --> S["Governed AI source record"]
+  S --> E["System-authored immutable Timeline Entry"]
+  M["Manual Timeline Entry"] --> E
+  E --> V["Immutable Entry Versions"]
+  V --> C["Evidence Claim + exact span"]
+  C --> H["Deterministic Highlight"]
+  H --> G["Consult Glance + Review Task"]
+  G -->|"View source"| V
+  U["Clinician review / pin"] --> L["Bounded clinic learning signal"]
+  L --> G
 ```
 
-### Trust contract
+## Runtime and security boundary
 
-An AI-scribed note is always a system-authored Timeline Entry with a session provenance pointer. AI extraction creates atomic Evidence Claims referencing an immutable `entry_version + span`; summaries are a reading layer, never the sole evidence layer. The system does not display self-reported model confidence. Instead, every claim has an Evidence State: `unverified`, `source-linked`, `clinician-confirmed`, or `conflicted`.
+The Pilot is a Next.js 16 application backed by PostgreSQL. Auth0 verifies the
+browser identity. The service validates the issuer, audience, signature and
+expiry of the access token before opening a transaction. PostgreSQL maps the
+verified subject to a separately provisioned user and uses `SET LOCAL` plus
+Clinic Membership Row-Level Security (RLS) for every request. Authentication
+never itself creates clinic access.
 
-Risk is also deliberately narrow. A Risk Flag is emitted only by a deterministic rule: allergy–medication conflict, configured red-flag symptom, unresolved urgent item, or overdue high-priority follow-up. Its consequence is an unassigned, cancellable Review Task marked “review required—not a diagnosis.” A clinician can dismiss the flag with a required structured reason; this supplies a concrete false-positive review loop. A clinician may also create or confirm a current Clinical Plan; it takes precedence over conflicting older claims while retaining source history.
-
-Importance is separate from risk. It ranks the Glance View using recency, open tasks, clinician confirmation, and clinic-shared feedback. Accept, reject, pin, and dismiss-with-reason interactions affect only this reading-order signal. They cannot alter risk rules, clinical content, patient-facing summaries, or permissions.
-
-### Architecture and data model
-
-The self-contained MVP uses Next.js, TypeScript, SQLite, and Drizzle. The database is the source of truth and server-side route handlers enforce role and clinic scope. Production would move the same logical schema to Postgres with row-level security for defense in depth.
+The browser uses only the restricted `nightingale_web` role. Direct table
+mutation is revoked; security-definer procedures implement append-version,
+comment, review, task, revert, AI-intake and patient-summary actions. Every
+write appends an audit event without clinical content and an outbox event in
+the same transaction. An optimistic version check produces deterministic
+conflict handling: an outdated edit receives `409 VERSION_CONFLICT`, and a
+revert appends a new version instead of overwriting history.
 
 ```mermaid
 erDiagram
-  PATIENT ||--o{ ENTRY : owns
-  ENTRY ||--o{ ENTRY_VERSION : versions
+  CLINIC ||--o{ CLINIC_MEMBERSHIP : scopes
+  PATIENT ||--o{ CARE_ENTRY : has
+  CARE_ENTRY ||--o{ ENTRY_VERSION : appends
+  CARE_ENTRY ||--o{ ENTRY_COMMENT : annotates
   ENTRY_VERSION ||--o{ EVIDENCE_CLAIM : grounds
   EVIDENCE_CLAIM ||--o{ HIGHLIGHT : surfaces
-  HIGHLIGHT ||--o{ REVIEW_TASK : creates
-  ENTRY ||--o{ COMMENT : annotates
-  USER ||--o{ AUDIT_LOG : performs
+  HIGHLIGHT ||--o{ CARE_TASK : triggers
+  PATIENT ||--o{ AI_SCRIBED_SOURCE : retains_redacted_origin
+  AI_SCRIBED_SOURCE ||--o{ CARE_ENTRY : cites
+  PATIENT ||--o{ PATIENT_SUMMARY : publishes
+  CLINIC ||--o{ IMPORTANCE_LEARNING : bounds_feedback
 ```
 
-`EntryVersion` is immutable. Editing creates a new version, and reverting creates another new version containing historic content. A Highlight always references the exact version from which it was derived; it is never silently repointed when a source changes. Concurrent edits use optimistic concurrency: different role-owned sections can change independently, while an outdated write to the same section returns a deterministic `409 VERSION_CONFLICT`.
+Roles are enforced server-side. Staff can make staff entries and collaborate,
+but cannot write clinician content; clinicians can make clinician entries,
+review Highlights and publish patient-facing summaries; admins have
+clinic-scoped oversight. A separately provisioned patient account receives
+only `patient_summaries`. It cannot receive the internal timeline, comments,
+tasks, claims, Highlights or raw AI drafts.
 
-The LLM integration is adapter-based. With an API key it can receive only a Redacted Prompt and return schema-validated Evidence Claims. Without one, seeded AI-scribed notes and deterministic fixtures preserve the entire demo and test path. Names, ID-like strings, and phone numbers are redacted before the LLM boundary; an internal mapping resolves output spans back to original sources. The prototype is synthetic-data-only. TLS, managed encryption at rest, and full key management are explicit production deployment requirements rather than claims made for the local demo.
+## Trust, AI intake and prioritisation
 
-### Access control and longitudinal scale
+Three explicitly typed system entries are supported: doctor–patient consult,
+nurse–patient consult and AI–patient session summaries. Before intake, common
+direct identifiers—including email-shaped identifiers, phone-like numbers and
+long ID-like numbers—are redacted. The server stores the redacted source and
+links the system entry to `ai-source:<id>`; it does not present a fabricated
+confidence value. The current local submission mode creates a clearly marked
+“AI-scribed draft — clinician review required” from redacted synthetic input.
+An external transcription/LLM provider is intentionally not enabled by
+default: no real patient audio or text is sent to any provider without a
+separate approved processor, agreement, credentials and redaction regression
+test corpus.
 
-Patient, Staff, Clinician, and Admin identities are seeded as HTTP-only server sessions. The Patient response contains only patient-facing entries; it does not return raw AI records, internal comments, tasks, or Highlights. Staff cannot overwrite clinician content, and clinicians cannot overwrite staff content. This is checked on mutation routes, not merely in the browser.
+Claims identify an immutable `entry_version` and `[start,end)` span. Clicking
+**View source in Timeline** scrolls to that Entry and highlights the exact
+span; the Evidence Workbench also shows the excerpt, evidence state, extractor
+version and rule version. This keeps paraphrase separate from its source.
 
-For long records, source entries are never deleted. Items older than 90 days with no risk, open task, or clinician confirmation may be collapsed into Monthly Capsules, with every underlying source still available. The Glance query reads indexed active highlights and open tasks rather than repeatedly reprocessing the full Timeline. The measurement protocol is 100 warm authenticated requests against 1,000 Timeline Entries, 20 active Highlights, and 10 open tasks; the target is P95 ≤ 300ms.
+Risk floors are deterministic rules over validated claims. Importance only
+changes ordering. Clinician accept or pin can increment a clinic-local,
+entity-type feedback value by one, capped at ten; it never changes a risk rule,
+clinical content, record visibility or patient summary. Reject and dismiss do
+not inflate it. That gives the “learning” feature a measurable, bounded effect
+rather than a drifting model ordinal.
 
-### Scope and validation
+## Performance, scope and verification
 
-The build deliberately prioritizes a trustworthy shared record over a full EHR, ambient transcription, or autonomous clinical decision-making. Its demo follows one synthetic longitudinal case: a patient reports rash after amoxicillin in an AI session; a nurse summary and an overdue lab task add context; staff requests review; a clinician confirms the signal and updates the plan. The review flows from Glance card to exact timeline source, showing why the system surfaced the item and what happens next.
+The Consult Glance read model is indexed by clinic, patient, status and
+importance. On this local Postgres instance, `npm run pilot:benchmark` creates
+an isolated synthetic fixture with 1,000 Timeline Entries, 20 active
+Highlights and 10 open tasks, warms the RLS-scoped read path, then executes
+100 requests. Latest result: **P50 11.1 ms, P95 13.7 ms**, below the 300 ms
+target. This is a repository/read-model measurement; it deliberately excludes
+the Auth0 network exchange and browser rendering, which would be measured in a
+production deployment.
 
-Automated black-box pytest tests validate server-side RBAC, version increment and revert behavior, provenance resolution to an Entry/span, and deterministic concurrent-edit handling. This is intentional: the required `test_*.py` files test the running Next.js HTTP API, not a detached reimplementation of application logic.
+Automated checks cover OIDC request verification, tenant isolation and blocked
+direct mutation, role-specific entry writes, version increments, stale-write
+conflicts, immutable reverts, comments and resolve state, exact Highlight
+provenance, clinician-only review, patient-summary isolation, deterministic
+risk rules and the benchmark. Run:
+
+```bash
+npm run test:pilot-auth
+npm run test:pilot-memberships
+npm run test:pilot-isolation
+npm run test:pilot-workflow
+npm run test:pilot-rules
+npm run pilot:benchmark
+```
+
+This is a synthetic-data Pilot, not a production clinical system. Local Docker
+Postgres is not claimed as encrypted-at-rest production storage, and the local
+voice capture intentionally records only in-browser synthetic test audio—it
+does not transmit or transcribe it. Production readiness requires managed TLS,
+managed encryption at rest, formal key management, an approved PHI processor,
+operational monitoring, a redaction corpus and a clinical safety review.

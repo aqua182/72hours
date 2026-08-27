@@ -7,5 +7,8 @@ better-sqlite3 — MIT — https://github.com/WiseLibs/better-sqlite3
 Zod — MIT — https://github.com/colinhacks/zod
 TypeScript — Apache-2.0 — https://github.com/microsoft/TypeScript
 pytest — MIT — https://github.com/pytest-dev/pytest
+node-postgres (pg) — MIT — https://github.com/brianc/node-postgres
+Auth0 Next.js SDK — MIT — https://github.com/auth0/nextjs-auth0
+jose — MIT — https://github.com/panva/jose
 
 All patient, clinician, and AI-scribed content in this repository is synthetic.

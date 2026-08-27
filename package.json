@@ -1,6 +1,6 @@
 {
   "name": "nightingale-care-note",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -19,7 +19,8 @@
     "test:pilot-auth": "tsx pilot-runtime/tests/auth0-request-authorization.ts",
     "test:pilot-auth-callback": "tsx pilot-runtime/tests/auth0-callback-error.ts",
     "test:pilot-memberships": "tsx pilot-runtime/tests/membership-handler.ts",
-    "benchmark": "tsx scripts/benchmark-glance.ts"
+    "benchmark": "tsx scripts/benchmark-glance.ts",
+    "pilot:benchmark": "tsx pilot-runtime/scripts/benchmark-consult-glance.ts"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.27.0",

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Pool, type PoolClient } from "pg";
 
-type Role = "staff" | "clinician" | "admin";
+type Role = "staff" | "clinician" | "admin" | "system";
 
 const demoPatientReference = "NIGHTINGALE-DEMO-AVA-001";
 
@@ -41,7 +41,7 @@ async function insertEntry(client: PoolClient, input: { clinicId: string; patien
 
 async function seedDemoCareNote(client: PoolClient, input: { clinicId: string }) {
   const existing = await client.query<{ id: string }>("SELECT id FROM patients WHERE clinic_id = $1 AND external_reference = $2", [input.clinicId, demoPatientReference]);
-  if (existing.rowCount === 1) return { patientId: existing.rows[0].id, created: false };
+  const created = existing.rowCount !== 1;
 
   const demoAuthor = await client.query<{ id: string }>(
     `INSERT INTO users (id, external_subject, display_name)
@@ -56,16 +56,33 @@ async function seedDemoCareNote(client: PoolClient, input: { clinicId: string })
      ON CONFLICT (clinic_id, user_id) DO UPDATE SET role = 'clinician', active = true`,
     [input.clinicId, demoAuthor.rows[0].id],
   );
-  const patient = await client.query<{ id: string }>(
-    "INSERT INTO patients (clinic_id, external_reference, display_label) VALUES ($1, $2, 'Ava Tan (Synthetic)') RETURNING id",
-    [input.clinicId, demoPatientReference],
-  );
-  const patientId = patient.rows[0].id;
+  const authorId = demoAuthor.rows[0].id;
+  const patientId = created
+    ? (await client.query<{ id: string }>("INSERT INTO patients (clinic_id, external_reference, display_label) VALUES ($1, $2, 'Ava Tan (Synthetic)') RETURNING id", [input.clinicId, demoPatientReference])).rows[0].id
+    : existing.rows[0].id;
+  if (!created) {
+    const systemAuthor = await client.query<{ id: string }>(
+      `INSERT INTO users (id, external_subject, display_name) VALUES (gen_random_uuid(), 'nightingale:system-scribe', 'Nightingale governed AI scribe')
+       ON CONFLICT (external_subject) DO UPDATE SET display_name = EXCLUDED.display_name RETURNING id`,
+    );
+    for (const [type, content] of [
+      ["ai_doctor_consult_summary", "AI-scribed draft — clinician review required: Doctor consult summary: review spreading rash after amoxicillin and document a treatment plan."],
+      ["ai_nurse_consult_summary", "AI-scribed draft — clinician review required: Nurse consult summary: renal blood test remains outstanding and follow-up is needed."],
+      ["ai_patient_session_summary", "AI-scribed draft — clinician review required: Patient session summary: patient is concerned about the spreading rash and wants clear next steps."],
+    ] as const) {
+      const hasEntry = await client.query("SELECT 1 FROM care_entries WHERE clinic_id = $1 AND patient_id = $2 AND type = $3::entry_type", [input.clinicId, patientId, type]);
+      if (hasEntry.rowCount === 0) {
+        const source = await client.query<{ id: string }>("INSERT INTO ai_scribed_sources (clinic_id, patient_id, interaction_type, redacted_source, created_by) VALUES ($1, $2, $3::entry_type, $4, $5) RETURNING id", [input.clinicId, patientId, type, content, authorId]);
+        const entry = await client.query<{ id: string }>("INSERT INTO care_entries (clinic_id, patient_id, author_id, author_role, type, visibility, provenance_pointer) VALUES ($1, $2, $3, 'system', $4::entry_type, 'internal', 'ai-source:' || $5::text) RETURNING id", [input.clinicId, patientId, systemAuthor.rows[0].id, type, source.rows[0].id]);
+        await client.query("INSERT INTO entry_versions (clinic_id, entry_id, version, content, changed_by) VALUES ($1, $2, 1, $3, $4)", [input.clinicId, entry.rows[0].id, content, authorId]);
+      }
+    }
+    return { patientId, created: false };
+  }
   const authorRole: Role = "clinician";
   const rashContent = "Patient reports a spreading rash after starting amoxicillin. No breathing difficulty reported.";
   const renalContent = "Renal blood test remains outstanding. Follow-up is required before the next consult.";
 
-  const authorId = demoAuthor.rows[0].id;
   const rash = await insertEntry(client, { clinicId: input.clinicId, patientId, authorId, authorRole, type: "staff_note", content: rashContent });
   await insertEntry(client, {
     clinicId: input.clinicId,
@@ -105,6 +122,18 @@ async function seedDemoCareNote(client: PoolClient, input: { clinicId: string })
             ($1, $2, $4, 'Book renal blood test', 'open', false, now() + interval '2 days')`,
     [input.clinicId, patientId, reaction.rows[0].id, renalHighlight.rows[0].id],
   );
+  // Populate all three mandated AI interaction types as distinct system
+  // entries. The original legacy nurse seed remains as sourced history.
+  const systemAuthor = await client.query<{ id: string }>(`INSERT INTO users (id, external_subject, display_name) VALUES (gen_random_uuid(), 'nightingale:system-scribe', 'Nightingale governed AI scribe') ON CONFLICT (external_subject) DO UPDATE SET display_name = EXCLUDED.display_name RETURNING id`);
+  for (const [type, content] of [
+    ["ai_doctor_consult_summary", "AI-scribed draft — clinician review required: Doctor consult summary: review spreading rash after amoxicillin and document a treatment plan."],
+    ["ai_nurse_consult_summary", "AI-scribed draft — clinician review required: Nurse consult summary: renal blood test remains outstanding and follow-up is needed."],
+    ["ai_patient_session_summary", "AI-scribed draft — clinician review required: Patient session summary: patient is concerned about the spreading rash and wants clear next steps."],
+  ] as const) {
+    const source = await client.query<{ id: string }>("INSERT INTO ai_scribed_sources (clinic_id, patient_id, interaction_type, redacted_source, created_by) VALUES ($1, $2, $3::entry_type, $4, $5) RETURNING id", [input.clinicId, patientId, type, content, authorId]);
+    const entry = await client.query<{ id: string }>("INSERT INTO care_entries (clinic_id, patient_id, author_id, author_role, type, visibility, provenance_pointer) VALUES ($1, $2, $3, 'system', $4::entry_type, 'internal', 'ai-source:' || $5::text) RETURNING id", [input.clinicId, patientId, systemAuthor.rows[0].id, type, source.rows[0].id]);
+    await client.query("INSERT INTO entry_versions (clinic_id, entry_id, version, content, changed_by) VALUES ($1, $2, 1, $3, $4)", [input.clinicId, entry.rows[0].id, content, authorId]);
+  }
   return { patientId, created: true };
 }
 

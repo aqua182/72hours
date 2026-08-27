@@ -9,6 +9,7 @@ import { listClinicPatients } from "../src/db/patient-directory-repository";
 import { claimReviewTask, closeReviewTask } from "../src/db/review-task-repository";
 import { getEvidenceWorkbench, reviewHighlight } from "../src/db/evidence-workbench-repository";
 import { getCareNote } from "../src/db/care-note-read-repository";
+import { createAiScribedEntry, createComment, listEntryComments, listEntryVersions, listMyPatientSummaries, publishPatientSummary, revertEntryVersion, setCommentResolution } from "../src/db/collaboration-repository";
 
 function localEnvironment() {
   const values: Record<string, string> = {};
@@ -44,7 +45,7 @@ type Fixture = {
 };
 
 async function applyMigrations(client: PoolClient, databaseName: string) {
-  for (const migration of ["0000_security_roles.sql", "0001_foundation.sql", "0002_care_entry_creation.sql", "0003_review_task_workflow.sql", "0004_evidence_review_workflow.sql"]) {
+  for (const migration of ["0000_security_roles.sql", "0001_foundation.sql", "0002_care_entry_creation.sql", "0003_review_task_workflow.sql", "0004_evidence_review_workflow.sql", "0005_system_author_role.sql", "0006_collaboration_and_patient_portal.sql", "0007_care_note_event_feed.sql"]) {
     await client.query(readFileSync(`pilot-runtime/db/migrations/${migration}`, "utf8"));
   }
   await client.query(`GRANT CONNECT ON DATABASE ${databaseName} TO nightingale_web`);
@@ -202,6 +203,36 @@ async function main() {
       () => withPilotActor(testWeb!, identity, fixture.clinicId, (client, actor) => getCareNote(client, actor, fixture.otherPatientId)),
       (error: unknown) => error instanceof Error && error.message.includes("patient not found"),
     );
+
+    const comment = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => createComment(client, actor, entryId, "Please confirm the plan before the next consult."));
+    const comments = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => listEntryComments(client, actor, entryId));
+    assert.deepEqual(comments.map((item) => item.body), ["Please confirm the plan before the next consult."]);
+    await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => setCommentResolution(client, actor, comment.comment_id, true));
+    const resolvedComments = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => listEntryComments(client, actor, entryId));
+    assert.equal(resolvedComments[0].status, "resolved", "comment resolution must be persisted in the audit-backed workflow");
+
+    const reverted = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => revertEntryVersion(client, actor, entryId, 1, 2));
+    assert.ok(reverted.version_id);
+    const history = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => listEntryVersions(client, actor, entryId));
+    assert.deepEqual(history.map((item) => [item.version, item.content]), [[3, "Synthetic clinician entry"], [2, "Synthetic revised clinician entry"], [1, "Synthetic clinician entry"]]);
+    const revertAudit = await testAdmin.query("SELECT action FROM audit_events WHERE target_id = $1 AND action = 'entry_reverted'", [entryId]);
+    assert.equal(revertAudit.rowCount, 1, "revert must append an audit event rather than mutate history");
+
+    const aiEntry = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => createAiScribedEntry(client, actor, fixture.patientId, "ai_patient_session_summary", "Synthetic patient discussion, contact [REDACTED]."));
+    const aiStored = await testAdmin.query("SELECT author_role, type, provenance_pointer FROM care_entries WHERE id = $1", [aiEntry.care_entry_id]);
+    assert.deepEqual(aiStored.rows, [{ author_role: "system", type: "ai_patient_session_summary", provenance_pointer: aiEntry.provenance_pointer }]);
+
+    const patientSubject = `pilot-entry-patient-${randomUUID()}`;
+    const patientUserId = randomUUID();
+    await testAdmin.query("INSERT INTO users (id, external_subject, display_name) VALUES ($1, $2, 'Synthetic portal patient')", [patientUserId, patientSubject]);
+    await testAdmin.query("INSERT INTO patient_portal_access (patient_id, user_id) VALUES ($1, $2)", [fixture.patientId, patientUserId]);
+    await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => publishPatientSummary(client, actor, fixture.patientId, "Your care plan", "Please arrange the renal blood test and contact the clinic if symptoms worsen."));
+    const portalSummaries = await withAuthenticatedPilotActor(testWeb, { subject: patientSubject, issuer: "test", audience: "test" }, listMyPatientSummaries);
+    assert.deepEqual(portalSummaries.map((item) => item.content), ["Please arrange the renal blood test and contact the clinic if symptoms worsen."], "patient portal must expose only explicitly published summaries");
+    const eventTimestamp = await withPilotActor(testWeb, identity, fixture.clinicId, async (client) => {
+      return client.query<{ changed_at: string | null }>("SELECT care_note_changed_after($1, '1970-01-01T00:00:00Z'::timestamptz)::text AS changed_at", [fixture.patientId]);
+    });
+    assert.ok(eventTimestamp.rows[0].changed_at, "web role receives only a change timestamp, not direct outbox access");
 
     console.log("PASS: authenticated Care Note workflows preserve current versions, provenance, clinic isolation, audit, and outbox events.");
   } finally {
