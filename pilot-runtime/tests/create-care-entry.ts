@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
-import { createCareEntry } from "../src/db/care-entry-repository";
+import { appendCareEntryVersion, createCareEntry } from "../src/db/care-entry-repository";
 import { withPilotActor } from "../src/db/actor-transaction";
 
 function localEnvironment() {
@@ -102,17 +102,26 @@ async function main() {
     const stored = await testAdmin.query<{ current_version: number; content: string }>("SELECT e.current_version, v.content FROM care_entries e JOIN entry_versions v ON v.id = $2 WHERE e.id = $1", [entryId, versionId]);
     assert.deepEqual(stored.rows, [{ current_version: 1, content: "Synthetic clinician entry" }]);
 
-    const audit = await testAdmin.query("SELECT action, metadata ? 'content' AS contains_content FROM audit_events WHERE target_id = $1", [entryId]);
-    assert.deepEqual(audit.rows, [{ action: "care_entry_created", contains_content: false }]);
+    const appended = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => appendCareEntryVersion(client, actor, entryId, 1, "Synthetic revised clinician entry"));
+    const revised = await testAdmin.query<{ current_version: number; content: string }>("SELECT e.current_version, v.content FROM care_entries e JOIN entry_versions v ON v.id = $2 WHERE e.id = $1", [entryId, appended.entryVersionId]);
+    assert.deepEqual(revised.rows, [{ current_version: 2, content: "Synthetic revised clinician entry" }]);
+
+    const audit = await testAdmin.query("SELECT action, metadata ? 'content' AS contains_content FROM audit_events WHERE target_id = $1 ORDER BY created_at", [entryId]);
+    assert.deepEqual(audit.rows, [{ action: "care_entry_created", contains_content: false }, { action: "entry_version_appended", contains_content: false }]);
     const outbox = await testAdmin.query("SELECT aggregate_id FROM outbox_events WHERE aggregate_id = $1", [entryId]);
-    assert.equal(outbox.rowCount, 1, "care entry creation must enqueue a collaboration event");
+    assert.equal(outbox.rowCount, 2, "care entry creation and revision must each enqueue a collaboration event");
+
+    await assert.rejects(
+      () => withPilotActor(testWeb!, identity, fixture.clinicId, (client, actor) => appendCareEntryVersion(client, actor, entryId, 1, "Stale revision")),
+      (error: unknown) => error instanceof Error && error.message.includes("version conflict"),
+    );
 
     await assert.rejects(
       () => withPilotActor(testWeb!, identity, fixture.clinicId, (client, actor) => createCareEntry(client, actor, { patientId: fixture.otherPatientId, type: "clinician_note", content: "Cross-clinic entry" })),
       (error: unknown) => error instanceof Error && error.message.includes("patient not found"),
     );
 
-    console.log("PASS: authenticated clinician creates an immutable first version with audit/outbox records; cross-clinic creation is denied.");
+    console.log("PASS: authenticated clinician creates and revises immutable versions with audit/outbox records; stale and cross-clinic writes are denied.");
   } finally {
     await testWeb?.end();
     await testAdmin?.end();
