@@ -1,6 +1,6 @@
 {
   "name": "nightingale-care-note",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,6 +14,7 @@
     "test:micro": ".venv/bin/python -m pytest tests -q",
     "test:pilot-isolation": "tsx pilot-runtime/tests/rls-isolation.ts",
     "test:pilot-workflow": "tsx pilot-runtime/tests/create-care-entry.ts",
+    "test:pilot-rules": "tsx pilot-runtime/tests/deterministic-risk-rules.ts",
     "benchmark": "tsx scripts/benchmark-glance.ts"
   },
   "dependencies": {
