@@ -19,6 +19,27 @@ Membership. `/auth/login`, `/auth/logout`, and `/auth/callback` are mounted by
 the Pilot's Next.js Proxy; this service never uses the synthetic Demo role
 switcher.
 
+### Submission-demo bootstrap
+
+For the local synthetic demonstration, provision the already-authenticated
+Auth0 user through the administrator-only CLI. Get the user subject from
+Auth0 **User Management → Users → user details → User ID**; do not paste it
+into chat. This command creates or reuses the named local Clinic, grants the
+selected Membership, and creates the Ava Tan synthetic Care Note exactly once.
+
+```bash
+npm run pilot:provision -- "<Auth0 User ID>" "Pilot Clinician" "Nightingale Pilot Dev" clinician
+```
+
+The command uses `PILOT_ADMIN_DATABASE_URL` only on the local machine. The
+browser service continues to use only `PILOT_DATABASE_URL`, the restricted web
+role. Reload `http://localhost:3001` after it completes. A signed-in user with
+no active Membership sees no patient material and receives `NOT_PROVISIONED`
+from `GET /api/memberships`.
+
+Use the [submission recording runbook](docs/DEMO-RUNBOOK.md) to record the
+three-minute workflow demonstration without exposing credentials or real data.
+
 After you create the Auth0 Regular Web Application and API, run:
 
 ```bash
@@ -33,6 +54,7 @@ behavior with:
 
 ```bash
 npm run test:pilot-auth
+npm run test:pilot-memberships
 ```
 
 `GET /api/health` confirms the service is running. `POST /api/care-entries` requires a verified OIDC bearer token and accepts only `clinicId`, `patientId`, `type` (`staff_note` or `clinician_note`), and `content`. `PATCH /api/care-entries/:entryId` requires `clinicId`, `expectedVersion`, and `content`; a stale version returns `409 VERSION_CONFLICT`.

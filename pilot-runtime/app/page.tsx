@@ -1,4 +1,5 @@
 import { auth0 } from "../src/auth/auth0";
+import PilotWorkspace from "./pilot-workspace";
 
 const shell: React.CSSProperties = { maxWidth: 760, margin: "80px auto", padding: 32 };
 const card: React.CSSProperties = { background: "white", border: "1px solid #d6dedb", borderRadius: 16, padding: 32, boxShadow: "0 8px 24px rgba(21,36,43,0.06)" };
@@ -18,6 +19,7 @@ export default async function PilotHome() {
             <p style={{ marginTop: 0 }}>Signed in as <strong>{email}</strong>.</p>
             <p>Access to a clinic and its patients is granted separately through Clinic Memberships. Signing in never grants clinical access by itself.</p>
             <a href="/auth/logout" style={button}>Sign out</a>
+            <PilotWorkspace />
           </>
         ) : (
           <>

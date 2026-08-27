@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
 import { appendCareEntryVersion, createCareEntry } from "../src/db/care-entry-repository";
-import { withPilotActor } from "../src/db/actor-transaction";
+import { withAuthenticatedPilotActor, withPilotActor } from "../src/db/actor-transaction";
+import { listClinicMemberships } from "../src/db/membership-repository";
+import { listClinicPatients } from "../src/db/patient-directory-repository";
 import { claimReviewTask, closeReviewTask } from "../src/db/review-task-repository";
 import { getEvidenceWorkbench, reviewHighlight } from "../src/db/evidence-workbench-repository";
 import { getCareNote } from "../src/db/care-note-read-repository";
@@ -105,6 +107,13 @@ async function main() {
     }
 
     const identity = { subject: fixture.subject, issuer: "test", audience: "test" };
+    const memberships = await withAuthenticatedPilotActor(testWeb, identity, listClinicMemberships);
+    assert.equal(memberships.length, 1);
+    assert.equal(memberships[0].clinicId, fixture.clinicId);
+    assert.equal(memberships[0].role, "clinician");
+    assert.match(memberships[0].clinicName, /^Entry test clinic /);
+    const patientDirectory = await withPilotActor(testWeb, identity, fixture.clinicId, listClinicPatients);
+    assert.deepEqual(patientDirectory, [{ id: fixture.patientId, displayLabel: "Synthetic entry patient" }]);
     const created = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => createCareEntry(client, actor, { patientId: fixture.patientId, type: "clinician_note", content: "Synthetic clinician entry" }));
 
     const entryId = created.entryId;
