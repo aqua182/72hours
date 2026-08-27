@@ -13,12 +13,10 @@ This directory is intentionally separate from the local synthetic Demo. It is th
 ## Local foundation database
 
 ```bash
-docker compose -f pilot-runtime/docker-compose.yml up -d
-psql "$PILOT_ADMIN_DATABASE_URL" -f pilot-runtime/db/migrations/0000_security_roles.sql
-psql "$PILOT_ADMIN_DATABASE_URL" -f pilot-runtime/db/migrations/0001_foundation.sql
+bash pilot-runtime/scripts/setup-postgres.sh
 ```
 
-The web service then uses `PILOT_DATABASE_URL` for the restricted `nightingale_web` role. Neither URL is provided in source control. See `.env.example` for the required variables. Local database credentials are for synthetic or de-identified development data only.
+The web service then uses `PILOT_DATABASE_URL` for the restricted `nightingale_web` role. Neither URL is provided in source control. The wizard creates the required `pilot-runtime/.env`. Local database credentials are for synthetic or de-identified development data only.
 
 ## Before any Pilot data
 
