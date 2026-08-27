@@ -66,13 +66,16 @@ The Evidence Workbench is source-linked: `GET /api/highlights/:highlightId?clini
 ### Collaboration and longitudinal review
 
 - `POST`/`GET /api/care-entries/:entryId/comments` creates or reads internal
-  threaded comments. `PATCH /api/comments/:commentId` resolves or reopens one.
+  threaded comments with a parent, mention, and assignment constrained to an
+  active Clinic Member. `PATCH /api/comments/:commentId` resolves or reopens one.
 - `GET /api/care-entries/:entryId/versions` lists immutable snapshots.
   `POST /api/care-entries/:entryId/revert` restores an historic snapshot only
   by appending a new version and audit event.
-- `POST /api/ai-scribed-entries` accepts synthetic interaction text, redacts
-  direct identifiers before storage, and creates a distinct system-authored
-  doctor, nurse or AI-patient draft with an `ai-source:` provenance pointer.
+- `POST /api/ai-scribed-entries` redacts direct identifiers before storage or
+  model submission, then creates a distinct system-authored doctor, nurse or
+  AI-patient draft, immutable source pointer, Claim and review Highlight.
+- `POST /api/patient-insights` creates a patient-authored internal Timeline
+  Entry only when the signed-in user has the separate patient portal grant.
 - `POST /api/patients/:patientId/patient-summary` lets a clinician publish a
   plain-language summary. `GET /api/patient-summaries` is the separate patient
   endpoint; it never returns raw AI entries, internal notes, comments, claims,
@@ -85,9 +88,11 @@ manifest for the synthetic mobile demo, not an offline cache of patient data.
 
 `GET /api/patients/:patientId/care-note?clinicId=:clinicId` returns the clinic-scoped Care Note read model: current Timeline Entry versions, source-linked Highlights, and open or claimed tasks. It never falls back to another Clinic's patient record.
 
-## Governed AI Intake foundation
+## Governed AI Intake
 
-The Pilot has a server-side redaction utility, strict extraction schema validation, and deterministic risk rules for allergy-medication conflicts, breathing difficulty, and overdue renal follow-up. These rules create reviewable signals from validated Claims; they do not use a model risk score or self-reported confidence. Run `npm run test:pilot-rules` to verify the deterministic contract. The local submission mode creates clearly labelled AI-scribed drafts from redacted synthetic input and persists source linkage. It deliberately does not activate a third-party transcription or LLM provider without an approved processor, credentials, data-processing agreement and redaction regression corpus. Local voice capture is browser-only and synthetic; it is never uploaded or transcribed.
+The Pilot has server-side redaction for labelled Latin/Chinese names, email-like identifiers, phone-like numbers and long ID-like numbers; strict extraction schema validation; and deterministic risk rules for allergy-medication conflicts, breathing difficulty and overdue renal follow-up. Rules create reviewable signals, not model severity or confidence.
+
+When `DEEPSEEK_API_KEY` is present only in ignored `pilot-runtime/.env`, the server submits **already-redacted synthetic text** to DeepSeek's JSON chat API and validates the returned draft before persistence. Without that key, it uses a clearly labelled deterministic local draft instead. Browser speech recognition is an explicit synthetic-audio opt-in; it writes the reviewed transcript into the same redaction boundary and never uploads raw audio to this server. Browser recognition may use the browser vendor's service, so it is not approved for real patient data.
 
 ## Foundation contract
 
@@ -128,7 +133,7 @@ Measure the indexed Consult Glance read model against an isolated fixture of
 npm run pilot:benchmark
 ```
 
-The latest local result is P50 11.1 ms and P95 13.7 ms for 100 warm
+The latest local result is P50 25.0 ms and P95 141.6 ms for 100 warm
 RLS-scoped read-model requests. It excludes Auth0 network exchange and browser
 rendering; see the technical brief for the exact method and scope.
 

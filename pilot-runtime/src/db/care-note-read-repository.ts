@@ -33,7 +33,7 @@ export async function getCareNote(client: PoolClient, actor: PilotActor, patient
      JOIN care_entries e ON e.id = v.entry_id
      LEFT JOIN importance_learning l ON l.clinic_id = h.clinic_id AND l.entity_type = c.entity_type
      WHERE e.patient_id = $1 AND h.clinic_id = $2
-     ORDER BY h.importance DESC, h.created_at ASC, h.id ASC`,
+     ORDER BY LEAST(100, h.importance + COALESCE(l.score, 0)) DESC, h.created_at ASC, h.id ASC`,
     [patientId, actor.clinicId],
   );
   const openTasks = await client.query<{ id: string; title: string; status: string; review_required: boolean; due_at: string | null }>(

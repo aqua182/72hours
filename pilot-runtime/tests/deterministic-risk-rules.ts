@@ -3,11 +3,13 @@ import { evaluateDeterministicRiskRules } from "../src/ai/deterministic-risk-rul
 import { redactForModel } from "../src/ai/redaction";
 import { validateExtractedClaims } from "../src/ai/validated-extraction";
 
-const source = "Contact ava.tan@example.test on +65 8123 4567. Patient ID 12345678.";
+const source = "Patient name: Ava Tan. 姓名：王小明。 Contact ava.tan@example.test on +65 8123 4567. Patient ID 12345678.";
 const redacted = redactForModel(source);
 assert.equal(redacted.redactedText.includes("ava.tan@example.test"), false);
 assert.equal(redacted.redactedText.includes("8123 4567"), false);
-assert.equal(redacted.sourceRanges.length, 3);
+assert.equal(redacted.redactedText.includes("Ava Tan"), false);
+assert.equal(redacted.redactedText.includes("王小明"), false);
+assert.ok(redacted.sourceRanges.length >= 5, "names, email, phone, and ID-like numbers must all be redacted");
 
 const claims = validateExtractedClaims([
   { entryVersionId: "00000000-0000-4000-8000-000000000001", spanStart: 0, spanEnd: 8, entityType: "allergy", normalizedValue: "penicillin", extractionConfigVersion: "extract-v1" },

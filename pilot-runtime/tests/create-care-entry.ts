@@ -9,7 +9,7 @@ import { listClinicPatients } from "../src/db/patient-directory-repository";
 import { claimReviewTask, closeReviewTask } from "../src/db/review-task-repository";
 import { getEvidenceWorkbench, reviewHighlight } from "../src/db/evidence-workbench-repository";
 import { getCareNote } from "../src/db/care-note-read-repository";
-import { createAiScribedEntry, createComment, listEntryComments, listEntryVersions, listMyPatientSummaries, publishPatientSummary, revertEntryVersion, setCommentResolution } from "../src/db/collaboration-repository";
+import { createAiScribedEntry, createComment, createPatientInsight, listEntryComments, listEntryVersions, listMyPatientSummaries, markEvidenceClaimConflicted, publishPatientSummary, revertEntryVersion, setCommentResolution } from "../src/db/collaboration-repository";
 
 function localEnvironment() {
   const values: Record<string, string> = {};
@@ -45,7 +45,7 @@ type Fixture = {
 };
 
 async function applyMigrations(client: PoolClient, databaseName: string) {
-  for (const migration of ["0000_security_roles.sql", "0001_foundation.sql", "0002_care_entry_creation.sql", "0003_review_task_workflow.sql", "0004_evidence_review_workflow.sql", "0005_system_author_role.sql", "0006_collaboration_and_patient_portal.sql", "0007_care_note_event_feed.sql"]) {
+  for (const migration of ["0000_security_roles.sql", "0001_foundation.sql", "0002_care_entry_creation.sql", "0003_review_task_workflow.sql", "0004_evidence_review_workflow.sql", "0005_system_author_role.sql", "0006_collaboration_and_patient_portal.sql", "0007_care_note_event_feed.sql", "0008_completion_workflows.sql"]) {
     await client.query(readFileSync(`pilot-runtime/db/migrations/${migration}`, "utf8"));
   }
   await client.query(`GRANT CONNECT ON DATABASE ${databaseName} TO nightingale_web`);
@@ -218,9 +218,11 @@ async function main() {
     const revertAudit = await testAdmin.query("SELECT action FROM audit_events WHERE target_id = $1 AND action = 'entry_reverted'", [entryId]);
     assert.equal(revertAudit.rowCount, 1, "revert must append an audit event rather than mutate history");
 
-    const aiEntry = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => createAiScribedEntry(client, actor, fixture.patientId, "ai_patient_session_summary", "Synthetic patient discussion, contact [REDACTED]."));
+    const aiEntry = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => createAiScribedEntry(client, actor, fixture.patientId, "ai_patient_session_summary", "Synthetic patient discussion, contact [REDACTED].", "Patient asks when to arrange renal blood test."));
     const aiStored = await testAdmin.query("SELECT author_role, type, provenance_pointer FROM care_entries WHERE id = $1", [aiEntry.care_entry_id]);
     assert.deepEqual(aiStored.rows, [{ author_role: "system", type: "ai_patient_session_summary", provenance_pointer: aiEntry.provenance_pointer }]);
+    const aiHighlight = await testAdmin.query("SELECT h.risk_reason FROM highlights h JOIN evidence_claims c ON c.id = h.claim_id WHERE c.entry_version_id = $1", [aiEntry.entry_version_id]);
+    assert.equal(aiHighlight.rowCount, 1, "every AI-scribed entry must create a source-linked review Highlight");
 
     const patientSubject = `pilot-entry-patient-${randomUUID()}`;
     const patientUserId = randomUUID();
@@ -229,6 +231,14 @@ async function main() {
     await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => publishPatientSummary(client, actor, fixture.patientId, "Your care plan", "Please arrange the renal blood test and contact the clinic if symptoms worsen."));
     const portalSummaries = await withAuthenticatedPilotActor(testWeb, { subject: patientSubject, issuer: "test", audience: "test" }, listMyPatientSummaries);
     assert.deepEqual(portalSummaries.map((item) => item.content), ["Please arrange the renal blood test and contact the clinic if symptoms worsen."], "patient portal must expose only explicitly published summaries");
+    const insight = await withAuthenticatedPilotActor(testWeb, { subject: patientSubject, issuer: "test", audience: "test" }, (client) => createPatientInsight(client, fixture.patientId, "I am worried the rash is spreading."));
+    const insightRow = await testAdmin.query("SELECT author_role, type FROM care_entries WHERE id = $1", [insight.entry_id]);
+    assert.deepEqual(insightRow.rows, [{ author_role: "patient", type: "patient_insight" }]);
+    await withPilotActor(testWeb, identity, fixture.clinicId, (client) => markEvidenceClaimConflicted(client, claimId));
+    const conflicted = await testAdmin.query("SELECT evidence_state FROM evidence_claims WHERE id = $1", [claimId]);
+    assert.deepEqual(conflicted.rows, [{ evidence_state: "conflicted" }]);
+    const summaryOutbox = await testAdmin.query("SELECT id FROM outbox_events WHERE aggregate_type = 'patient_summary'");
+    assert.equal(summaryOutbox.rowCount, 1, "patient summary publication must enqueue an outbox event");
     const eventTimestamp = await withPilotActor(testWeb, identity, fixture.clinicId, async (client) => {
       return client.query<{ changed_at: string | null }>("SELECT care_note_changed_after($1, '1970-01-01T00:00:00Z'::timestamptz)::text AS changed_at", [fixture.patientId]);
     });

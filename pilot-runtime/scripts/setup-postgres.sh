@@ -262,6 +262,7 @@ apply_migration_if_missing "Evidence Workbench migration" "SELECT to_regprocedur
 apply_migration_if_missing "System author role migration" "SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'user_role'::regtype AND enumlabel = 'system')" pilot-runtime/db/migrations/0005_system_author_role.sql
 apply_migration_if_missing "Collaboration and patient portal migration" "SELECT to_regprocedure('create_entry_comment(uuid,text,uuid,uuid,uuid)') IS NOT NULL" pilot-runtime/db/migrations/0006_collaboration_and_patient_portal.sql
 apply_migration_if_missing "Care Note event-feed migration" "SELECT to_regprocedure('care_note_changed_after(uuid,timestamptz)') IS NOT NULL" pilot-runtime/db/migrations/0007_care_note_event_feed.sql
+apply_migration_if_missing "Pilot completion workflows migration" "SELECT to_regprocedure('create_patient_insight(uuid,text)') IS NOT NULL" pilot-runtime/db/migrations/0008_completion_workflows.sql
 
 stage "Verify the Foundation boundary"
 "${COMPOSE[@]}" exec -T postgres psql -U nightingale -d nightingale_pilot -c "SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname IN ('nightingale_web', 'nightingale_worker') ORDER BY rolname;"

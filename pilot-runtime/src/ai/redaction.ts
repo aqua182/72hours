@@ -5,6 +5,9 @@ export type RedactedSource = {
 };
 
 const sensitiveTokens = [
+  /\b(?:patient\s+name|name)\s*[:：]\s*(?:[A-Z][a-z'-]*\s+){1,3}[A-Z][a-z'-]*\b/gi,
+  /\b(?:Mr|Mrs|Ms|Miss|Dr)\.\s+[A-Z][a-z'-]*(?:\s+[A-Z][a-z'-]*){0,2}\b/g,
+  /(?:姓名|患者姓名)\s*[:：]\s*[\u4E00-\u9FFF]{2,4}/g,
   /\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g,
   /\b(?:\+?\d[\d -]{7,}\d)\b/g,
   /\b\d{6,}\b/g,

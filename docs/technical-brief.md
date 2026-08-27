@@ -60,31 +60,32 @@ Roles are enforced server-side. Staff can make staff entries and collaborate,
 but cannot write clinician content; clinicians can make clinician entries,
 review Highlights and publish patient-facing summaries; admins have
 clinic-scoped oversight. A separately provisioned patient account receives
-only `patient_summaries`. It cannot receive the internal timeline, comments,
-tasks, claims, Highlights or raw AI drafts.
+only `patient_summaries` and may submit a patient-authored Insight. It cannot
+receive the internal timeline, comments, tasks, claims, Highlights or raw AI drafts.
 
 ## Trust, AI intake and prioritisation
 
 Three explicitly typed system entries are supported: doctor–patient consult,
 nurse–patient consult and AI–patient session summaries. Before intake, common
-direct identifiers—including email-shaped identifiers, phone-like numbers and
-long ID-like numbers—are redacted. The server stores the redacted source and
-links the system entry to `ai-source:<id>`; it does not present a fabricated
-confidence value. The current local submission mode creates a clearly marked
-“AI-scribed draft — clinician review required” from redacted synthetic input.
-An external transcription/LLM provider is intentionally not enabled by
-default: no real patient audio or text is sent to any provider without a
-separate approved processor, agreement, credentials and redaction regression
-test corpus.
+direct identifiers—including labelled Latin/Chinese names, email-shaped
+identifiers, phone-like numbers and long ID-like numbers—are redacted. The
+server stores the redacted source and links the system entry to
+`ai-source:<id>`; it does not present a fabricated confidence value. When a
+local DeepSeek key is configured, it requests a JSON-only summary from the
+configured model, validates it, and creates a Claim plus source-linked review
+Highlight in the same workflow. Browser speech recognition requires explicit
+synthetic-audio consent; its reviewed transcript goes through the same
+redaction boundary. Neither route is authorized for real patient data.
 
 Claims identify an immutable `entry_version` and `[start,end)` span. Clicking
-**View source in Timeline** scrolls to that Entry and highlights the exact
-span; the Evidence Workbench also shows the excerpt, evidence state, extractor
-version and rule version. This keeps paraphrase separate from its source.
+**View source in Timeline** scrolls to that Entry, swaps in the immutable
+historic source version, and highlights the exact span; the Evidence Workbench
+also shows the excerpt, evidence state, extractor version and rule version.
 
 Risk floors are deterministic rules over validated claims. Importance only
 changes ordering. Clinician accept or pin can increment a clinic-local,
-entity-type feedback value by one, capped at ten; it never changes a risk rule,
+entity-type feedback value by one, capped at ten, and the read model orders by
+that bounded boost; it never changes a risk rule,
 clinical content, record visibility or patient summary. Reject and dismiss do
 not inflate it. That gives the “learning” feature a measurable, bounded effect
 rather than a drifting model ordinal.
@@ -95,7 +96,7 @@ The Consult Glance read model is indexed by clinic, patient, status and
 importance. On this local Postgres instance, `npm run pilot:benchmark` creates
 an isolated synthetic fixture with 1,000 Timeline Entries, 20 active
 Highlights and 10 open tasks, warms the RLS-scoped read path, then executes
-100 requests. Latest result: **P50 11.1 ms, P95 13.7 ms**, below the 300 ms
+100 requests. Latest result: **P50 25.0 ms, P95 141.6 ms**, below the 300 ms
 target. This is a repository/read-model measurement; it deliberately excludes
 the Auth0 network exchange and browser rendering, which would be measured in a
 production deployment.
@@ -116,8 +117,11 @@ npm run pilot:benchmark
 ```
 
 This is a synthetic-data Pilot, not a production clinical system. Local Docker
-Postgres is not claimed as encrypted-at-rest production storage, and the local
-voice capture intentionally records only in-browser synthetic test audio—it
-does not transmit or transcribe it. Production readiness requires managed TLS,
-managed encryption at rest, formal key management, an approved PHI processor,
-operational monitoring, a redaction corpus and a clinical safety review.
+Postgres is not claimed as encrypted-at-rest production storage. Production
+readiness still requires managed TLS, managed encryption at rest, formal key
+management, an approved PHI processor, operational monitoring, a redaction
+corpus and a clinical safety review.
+
+Older Timeline Entries additionally receive a client-side monthly capsule
+index after 90 days. The index is only a compact navigation layer: no source,
+version or audit history is deleted, and every original Entry remains available.

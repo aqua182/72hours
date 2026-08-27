@@ -17,8 +17,8 @@ export async function listEntryComments(client: PoolClient, actor: PilotActor, e
   return result.rows.map((row) => ({ id: row.id, parentCommentId: row.parent_comment_id, body: row.body, authorRole: row.author_role, status: row.status, mentionedName: row.mentioned_name, assigneeName: row.assignee_name, createdAt: row.created_at }));
 }
 
-export async function createComment(client: PoolClient, _actor: PilotActor, entryId: string, body: string) {
-  const result = await client.query<{ comment_id: string }>("SELECT create_entry_comment($1, $2, NULL, NULL, NULL) AS comment_id", [entryId, body]);
+export async function createComment(client: PoolClient, _actor: PilotActor, entryId: string, body: string, parentCommentId?: string, mentionedUserId?: string, assignedUserId?: string) {
+  const result = await client.query<{ comment_id: string }>("SELECT create_entry_comment($1, $2, $3, $4, $5) AS comment_id", [entryId, body, parentCommentId ?? null, mentionedUserId ?? null, assignedUserId ?? null]);
   return result.rows[0];
 }
 
@@ -41,8 +41,8 @@ export async function revertEntryVersion(client: PoolClient, _actor: PilotActor,
   return result.rows[0];
 }
 
-export async function createAiScribedEntry(client: PoolClient, _actor: PilotActor, patientId: string, type: "ai_doctor_consult_summary" | "ai_nurse_consult_summary" | "ai_patient_session_summary", redactedSource: string) {
-  const result = await client.query<{ care_entry_id: string; entry_version_id: string; provenance_pointer: string }>("SELECT * FROM create_ai_scribed_entry($1, $2::entry_type, $3)", [patientId, type, redactedSource]);
+export async function createAiScribedEntry(client: PoolClient, _actor: PilotActor, patientId: string, type: "ai_doctor_consult_summary" | "ai_nurse_consult_summary" | "ai_patient_session_summary", redactedSource: string, scribedSummary: string) {
+  const result = await client.query<{ care_entry_id: string; entry_version_id: string; provenance_pointer: string }>("SELECT * FROM create_ai_scribed_entry($1, $2::entry_type, $3, $4)", [patientId, type, redactedSource, scribedSummary]);
   return result.rows[0];
 }
 
@@ -54,4 +54,19 @@ export async function publishPatientSummary(client: PoolClient, _actor: PilotAct
 export async function listMyPatientSummaries(client: PoolClient) {
   const result = await client.query<{ patient_id: string; display_label: string; title: string; content: string; updated_at: string }>("SELECT patient_id, display_label, title, content, updated_at::text FROM get_my_patient_summaries()");
   return result.rows.map((row) => ({ patientId: row.patient_id, displayLabel: row.display_label, title: row.title, content: row.content, updatedAt: row.updated_at }));
+}
+
+export async function createPatientInsight(client: PoolClient, patientId: string, content: string) {
+  const result = await client.query<{ entry_id: string }>("SELECT create_patient_insight($1, $2) AS entry_id", [patientId, content]);
+  return result.rows[0];
+}
+
+export async function markEvidenceClaimConflicted(client: PoolClient, claimId: string) {
+  const result = await client.query<{ claim_id: string }>("SELECT mark_evidence_claim_conflicted($1) AS claim_id", [claimId]);
+  return result.rows[0];
+}
+
+export async function listClinicCollaborators(client: PoolClient, clinicId: string) {
+  const result = await client.query<{ user_id: string; display_name: string; role: string }>("SELECT user_id, display_name, role::text FROM list_clinic_collaborators($1)", [clinicId]);
+  return result.rows.map((row) => ({ userId: row.user_id, displayName: row.display_name, role: row.role }));
 }
