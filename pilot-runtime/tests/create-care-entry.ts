@@ -5,6 +5,7 @@ import { Pool, type PoolClient } from "pg";
 import { appendCareEntryVersion, createCareEntry } from "../src/db/care-entry-repository";
 import { withPilotActor } from "../src/db/actor-transaction";
 import { claimReviewTask, closeReviewTask } from "../src/db/review-task-repository";
+import { getEvidenceWorkbench, reviewHighlight } from "../src/db/evidence-workbench-repository";
 
 function localEnvironment() {
   const values: Record<string, string> = {};
@@ -40,7 +41,7 @@ type Fixture = {
 };
 
 async function applyMigrations(client: PoolClient, databaseName: string) {
-  for (const migration of ["0000_security_roles.sql", "0001_foundation.sql", "0002_care_entry_creation.sql", "0003_review_task_workflow.sql"]) {
+  for (const migration of ["0000_security_roles.sql", "0001_foundation.sql", "0002_care_entry_creation.sql", "0003_review_task_workflow.sql", "0004_evidence_review_workflow.sql"]) {
     await client.query(readFileSync(`pilot-runtime/db/migrations/${migration}`, "utf8"));
   }
   await client.query(`GRANT CONNECT ON DATABASE ${databaseName} TO nightingale_web`);
@@ -147,7 +148,41 @@ async function main() {
     const taskOutbox = await testAdmin.query("SELECT id FROM outbox_events WHERE aggregate_id = $1", [fixture.taskId]);
     assert.equal(taskOutbox.rowCount, 2, "task claim and closure must each enqueue a collaboration event");
 
-    console.log("PASS: authenticated care-entry and review-task workflows preserve versioning, clinic isolation, audit, and outbox events.");
+    const claimId = randomUUID();
+    const highlightId = randomUUID();
+    await testAdmin.query("INSERT INTO evidence_claims (id, clinic_id, entry_version_id, span_start, span_end, entity_type, normalized_value, evidence_state, extraction_config_version) VALUES ($1, $2, $3, 0, 9, 'symptom', 'synthetic symptom', 'source-linked', 'test-config-v1')", [claimId, fixture.clinicId, versionId]);
+    await testAdmin.query("INSERT INTO highlights (id, clinic_id, claim_id, title, risk_reason, importance, status, rule_version) VALUES ($1, $2, $3, 'Synthetic highlight', 'Synthetic review reason', 70, 'suggested', 'rule-v1')", [highlightId, fixture.clinicId, claimId]);
+
+    const workbench = await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => getEvidenceWorkbench(client, actor, highlightId));
+    assert.equal(workbench.sourceExcerpt, "Synthetic", "Workbench must resolve the exact original source span");
+    assert.equal(workbench.evidenceState, "source-linked");
+
+    await assert.rejects(
+      () => withPilotActor(testWeb!, staffIdentity, fixture.clinicId, (client, actor) => reviewHighlight(client, actor, highlightId, "accepted")),
+      (error: unknown) => error instanceof Error && error.message.includes("only a clinician"),
+    );
+
+    await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => reviewHighlight(client, actor, highlightId, "accepted"));
+    const reviewedHighlight = await testAdmin.query("SELECT h.status, c.evidence_state FROM highlights h JOIN evidence_claims c ON c.id = h.claim_id WHERE h.id = $1", [highlightId]);
+    assert.deepEqual(reviewedHighlight.rows, [{ status: "accepted", evidence_state: "clinician-confirmed" }]);
+    const highlightAudit = await testAdmin.query("SELECT action, metadata ? 'content' AS contains_content FROM audit_events WHERE target_id = $1", [highlightId]);
+    assert.deepEqual(highlightAudit.rows, [{ action: "highlight_reviewed", contains_content: false }]);
+    const highlightOutbox = await testAdmin.query("SELECT id FROM outbox_events WHERE aggregate_id = $1", [highlightId]);
+    assert.equal(highlightOutbox.rowCount, 1, "highlight review must enqueue a collaboration event");
+
+    const dismissedClaimId = randomUUID();
+    const dismissedHighlightId = randomUUID();
+    await testAdmin.query("INSERT INTO evidence_claims (id, clinic_id, entry_version_id, span_start, span_end, entity_type, normalized_value, evidence_state, extraction_config_version) VALUES ($1, $2, $3, 0, 9, 'symptom', 'dismissed synthetic symptom', 'source-linked', 'test-config-v1')", [dismissedClaimId, fixture.clinicId, versionId]);
+    await testAdmin.query("INSERT INTO highlights (id, clinic_id, claim_id, title, risk_reason, importance, status, rule_version) VALUES ($1, $2, $3, 'Dismissable synthetic highlight', 'Synthetic review reason', 60, 'suggested', 'rule-v1')", [dismissedHighlightId, fixture.clinicId, dismissedClaimId]);
+    await assert.rejects(
+      () => withPilotActor(testWeb!, identity, fixture.clinicId, (client, actor) => reviewHighlight(client, actor, dismissedHighlightId, "dismissed")),
+      (error: unknown) => error instanceof Error && error.message.includes("dismissal reason required"),
+    );
+    await withPilotActor(testWeb, identity, fixture.clinicId, (client, actor) => reviewHighlight(client, actor, dismissedHighlightId, "dismissed", "source_outdated"));
+    const dismissed = await testAdmin.query("SELECT h.status, h.dismissal_reason, c.evidence_state FROM highlights h JOIN evidence_claims c ON c.id = h.claim_id WHERE h.id = $1", [dismissedHighlightId]);
+    assert.deepEqual(dismissed.rows, [{ status: "dismissed", dismissal_reason: "source_outdated", evidence_state: "source-linked" }]);
+
+    console.log("PASS: authenticated care-entry, Review Task, and Evidence Workbench workflows preserve provenance, clinic isolation, audit, and outbox events.");
   } finally {
     await testWeb?.end();
     await testAdmin?.end();
