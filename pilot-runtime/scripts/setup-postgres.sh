@@ -185,7 +185,7 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 TOTAL_STAGES=5
-ENV_FILE="${ENV_FILE:-pilot-runtime/.env}"
+ENV_FILE="${PILOT_ENV_FILE:-pilot-runtime/.env}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f pilot-runtime/docker-compose.yml)
 
 banner "Nightingale local Pilot Postgres"
@@ -225,7 +225,20 @@ write_env PILOT_DATABASE_URL "postgresql://nightingale_web:${PILOT_WEB_DB_PASSWO
 stage "Start the isolated Postgres container"
 step "Docker will download postgres:16-alpine the first time, then start the project database on port 5434."
 "${COMPOSE[@]}" up -d
-"${COMPOSE[@]}" exec -T postgres pg_isready -U nightingale -d nightingale_pilot
+postgres_ready=false
+for attempt in {1..30}; do
+  if "${COMPOSE[@]}" exec -T postgres pg_isready -U nightingale -d nightingale_pilot >/dev/null 2>&1; then
+    postgres_ready=true
+    break
+  fi
+  note "Waiting for Postgres to initialize (${attempt}/30)..."
+  sleep 1
+done
+if [[ "$postgres_ready" != true ]]; then
+  warn "Postgres did not become ready within 30 seconds. Recent container logs:"
+  "${COMPOSE[@]}" logs --tail=40 postgres
+  exit 1
+fi
 say "Postgres is accepting local connections."
 
 stage "Create restricted roles and apply the Foundation migration"

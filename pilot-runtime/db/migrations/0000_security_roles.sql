@@ -18,3 +18,8 @@ $$;
 REVOKE ALL ON DATABASE nightingale_pilot FROM PUBLIC;
 GRANT CONNECT ON DATABASE nightingale_pilot TO nightingale_web, nightingale_worker;
 GRANT nightingale_owner TO CURRENT_USER;
+
+-- The Docker-created database starts with the bootstrap administrator owning
+-- public. Transfer that ownership before 0001 switches to nightingale_owner;
+-- otherwise the restricted migration role cannot create the Pilot schema.
+ALTER SCHEMA public OWNER TO nightingale_owner;
