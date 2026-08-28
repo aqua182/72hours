@@ -1,0 +1,36 @@
+Nightingale Pilot attribution
+===============================
+
+Application runtime and test dependencies (versions are recorded in
+package-lock.json):
+
+- Next.js 16.3.3 - MIT - https://github.com/vercel/next.js
+- React 19.2.8 and React DOM 19.2.8 - MIT - https://github.com/facebook/react
+- Auth0 Next.js SDK 4.27.0 - MIT - https://github.com/auth0/nextjs-auth0
+- jose 6.2.10 - MIT - https://github.com/panva/jose
+- node-postgres (pg) 8.23.0 - MIT - https://github.com/brianc/node-postgres
+- Zod 4.4.3 - MIT - https://github.com/colinhacks/zod
+- Drizzle ORM 0.45.2 - Apache-2.0 - https://github.com/drizzle-team/drizzle-orm
+- Drizzle Kit 0.31.10 - MIT - https://github.com/drizzle-team/drizzle-orm
+- better-sqlite3 13.0.3 - MIT - https://github.com/WiseLibs/better-sqlite3
+- TypeScript 7.0.2 - Apache-2.0 - https://github.com/microsoft/TypeScript
+- tsx 4.23.12 - MIT - https://github.com/privatenumber/tsx
+- pytest - MIT - https://github.com/pytest-dev/pytest
+- @types/node, @types/react, @types/react-dom, @types/pg, and
+  @types/better-sqlite3 - MIT - https://github.com/DefinitelyTyped/DefinitelyTyped
+
+Infrastructure and external services:
+
+- PostgreSQL 16 - PostgreSQL License - https://www.postgresql.org/about/licence/
+- Docker Desktop / Docker Engine - Apache-2.0 components; Docker Desktop is
+  distributed under Docker's subscription terms - https://www.docker.com/legal/
+- Auth0 hosted identity service - commercial hosted service; no Auth0 model or
+  source code is bundled beyond the MIT SDK listed above - https://auth0.com/terms
+- DeepSeek Chat Completions API / deepseek-chat - external hosted model service
+  governed by DeepSeek terms; no model weights are bundled in this repository -
+  https://api-docs.deepseek.com/
+- Browser Web Speech Recognition - optional browser-vendor service used only
+  after explicit synthetic-audio consent; no speech model is bundled -
+  https://developer.mozilla.org/docs/Web/API/Web_Speech_API
+
+All patient, clinician, and AI-scribed content in this repository is synthetic.

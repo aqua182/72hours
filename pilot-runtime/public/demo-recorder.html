@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nightingale demo recorder</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f7faf8; color: #162a2c; font: 18px/1.45 system-ui, sans-serif; }
+      main { width: min(620px, calc(100% - 48px)); padding: 38px; background: #fff; border: 1px solid #dbe7e3; border-radius: 18px; box-shadow: 0 14px 40px #153c3515; }
+      h1 { margin: 0 0 12px; font-size: 32px; } p { color: #526467; } button { border: 0; border-radius: 10px; padding: 14px 20px; background: #008778; color: white; font: inherit; font-weight: 700; cursor: pointer; } button[disabled] { opacity: .55; cursor: not-allowed; } #stop { background: #a34336; margin-left: 10px; } #status { min-height: 28px; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Record the Nightingale walkthrough</h1>
+      <p>Choose the Nightingale Pilot browser tab in the system picker. This recorder captures video only: microphone audio is always off, and the resulting WebM file is downloaded locally.</p>
+      <button id="start">Start recording</button><button id="stop" disabled>Stop &amp; download</button>
+      <p id="status" aria-live="polite">Ready.</p>
+    </main>
+    <script>
+      const start = document.querySelector('#start');
+      const stop = document.querySelector('#stop');
+      const status = document.querySelector('#status');
+      let recorder; let chunks = [];
+      start.addEventListener('click', async () => {
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          chunks = [];
+          recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+          recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+          recorder.onstop = () => {
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `nightingale-demo-${new Date().toISOString().replaceAll(':', '-')}.webm`;
+            link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+            stream.getTracks().forEach((track) => track.stop());
+            start.disabled = false; stop.disabled = true; status.textContent = 'Downloaded locally.';
+          };
+          stream.getVideoTracks()[0].addEventListener('ended', () => recorder?.state === 'recording' && recorder.stop());
+          recorder.start(1000); start.disabled = true; stop.disabled = false; status.textContent = 'Recording video only.';
+        } catch (error) { status.textContent = `Recording did not start: ${error.name}.`; }
+      });
+      stop.addEventListener('click', () => recorder?.state === 'recording' && recorder.stop());
+    </script>
+  </body>
+</html>

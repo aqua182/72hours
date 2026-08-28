@@ -1,0 +1,49 @@
+{
+  "name": "nightingale-care-note",
+  "version": "0.12.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "pilot:dev": "cd pilot-runtime && ../node_modules/.bin/next dev --port 3001",
+    "pilot:build": "cd pilot-runtime && ../node_modules/.bin/next build",
+    "pilot:start": "cd pilot-runtime && ../node_modules/.bin/next start --port 3001",
+    "pilot:provision": "tsx pilot-runtime/scripts/provision-demo-member.ts",
+    "pilot:provision-patient": "tsx pilot-runtime/scripts/provision-demo-patient.ts",
+    "lint": "next lint",
+    "db:seed": "tsx src/server/seed.ts",
+    "test:micro": ".venv/bin/python -m pytest tests -q",
+    "test:pilot-micro": "tsx pilot-runtime/tests/required-micro-tests.ts",
+    "test:pilot-isolation": "tsx pilot-runtime/tests/rls-isolation.ts",
+    "test:pilot-workflow": "tsx pilot-runtime/tests/create-care-entry.ts",
+    "test:pilot-rules": "tsx pilot-runtime/tests/deterministic-risk-rules.ts",
+    "test:pilot-auth": "tsx pilot-runtime/tests/auth0-request-authorization.ts",
+    "test:pilot-auth-callback": "tsx pilot-runtime/tests/auth0-callback-error.ts",
+    "test:pilot-memberships": "tsx pilot-runtime/tests/membership-handler.ts",
+    "test:pilot-patient-portal": "tsx pilot-runtime/tests/patient-portal-access.ts",
+    "benchmark": "tsx scripts/benchmark-glance.ts",
+    "pilot:benchmark": "tsx pilot-runtime/scripts/benchmark-consult-glance.ts"
+  },
+  "dependencies": {
+    "@auth0/nextjs-auth0": "^4.27.0",
+    "better-sqlite3": "latest",
+    "drizzle-orm": "latest",
+    "jose": "^6.2.10",
+    "next": "latest",
+    "pg": "^8.23.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "latest",
+    "@types/node": "latest",
+    "@types/pg": "^8.23.1",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "drizzle-kit": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
